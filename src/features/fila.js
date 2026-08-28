@@ -78,12 +78,12 @@ function linhasJogadores(q) {
 function painel(q, { bannerUrl = null } = {}) {
   const banner = bannerUrl || q.banner;
   const campoModo = `<:pt:1542011838487597076> Modo de Jogo\n**${q.modalidade}**`;
+  const campoValor = `<:cifrao:1542021614600978452> Valor Partida\n**${money.fmt(q.valor)}**`;
   const opcoes = opcoesModo(q.modalidade);
 
   return ui.bloco(cfg.COR.primaria,
-    // Banner pequeno no canto (thumbnail), preso ao campo de modo de jogo.
-    banner ? ui.comThumb([campoModo], banner) : ui.txt(campoModo),
-    ui.txt(`<:cifrao:1542021614600978452> Valor Partida\n**${money.fmt(q.valor)}**`),
+    // Modo + valor juntos na mesma secao, ao lado da mesma thumbnail — sem vao entre os dois.
+    banner ? ui.comThumb([campoModo, campoValor], banner) : [ui.txt(campoModo), ui.txt(campoValor)],
     ui.divisor(),
     ui.txt(`<:duas:1542028376452370482> Jogadores na fila\n${linhasJogadores(q)}`),
     ui.divisor(),
