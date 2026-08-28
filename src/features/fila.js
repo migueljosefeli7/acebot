@@ -4,12 +4,13 @@ const ui = require('../lib/ui');
 const money = require('../lib/money');
 const wallet = require('../lib/wallet');
 const banners = require('../lib/banners');
+const emo = require('../lib/emojis');
 
 const GELO = { INFINITO: 'Gelo Infinito', NORMAL: 'Gelo Normal' };
 
 const MODALIDADES = [
   '1x1 Mobile', '2x2 Mobile', '3x3 Mobile', '4x4 Mobile',
-  '1x1 Misto', '2x2 Misto', '3x3 Misto', '4x4 Misto',
+  '2x2 Misto', '3x3 Misto', '4x4 Misto',
   '1x1 Emulador', '2x2 Emulador', '3x3 Emulador', '4x4 Emulador',
   '1x1 Tático', '2x2 Tático', '3x3 Tático', '4x4 Tático',
 ];
@@ -18,20 +19,56 @@ const getQueue = (id) => db.prepare('SELECT * FROM queues WHERE id = ?').get(id)
 const entradas = (queueId) =>
   db.prepare('SELECT * FROM queue_entries WHERE queue_id = ? ORDER BY joined_at ASC').all(queueId);
 
+/* -------------------------------------------------------------- MODO/GELO */
+
+/** "Misto" (1 emu + resto mobile por time) não usa gelo — usa quantidade de EMU no time. */
+const ehMisto = (modalidade) => /misto/i.test(modalidade || '');
+
+/** Tamanho do time a partir do "3x3 Misto" -> 3. Nunca existe 1x1 Misto (precisa de pelo menos 1 emu + 1 mobile). */
+const tamanhoTime = (modalidade) => {
+  const m = /^(\d)x\d/i.exec(String(modalidade || ''));
+  return m ? Number(m[1]) : 1;
+};
+
+/**
+ * Opções de entrada na fila dessa modalidade — cada uma vira um botão e só
+ * empareia com quem escolheu o MESMO valor (mesma regra pro gelo e pro EMU).
+ *  - Mobile/Emulador/Tático: Gelo Normal ou Gelo Infinito (fixo).
+ *  - Misto: quantidade de EMU no time, de 1 até (tamanho do time - 1).
+ */
+function opcoesModo(modalidade) {
+  if (ehMisto(modalidade)) {
+    const qtd = Math.max(1, tamanhoTime(modalidade) - 1);
+    return Array.from({ length: qtd }, (_, i) => {
+      const n = i + 1;
+      return { valor: `EMU${n}`, label: `${n} Emu`, emoji: emo.emulador };
+    });
+  }
+  return [
+    { valor: 'INFINITO', label: 'Gelo Infinito', emoji: '<:infinito:1542027016768069702>' },
+    { valor: 'NORMAL', label: 'Gelo Normal', emoji: '<:glo:1542027218341994618>' },
+  ];
+}
+
+/** Rótulo pra exibir um valor de gelo/EMU já salvo (ticket, log, painel de streamer). */
+function rotuloModo(gelo) {
+  if (gelo === 'INFINITO') return 'Gelo Infinito';
+  if (gelo === 'NORMAL') return 'Gelo Normal';
+  const m = /^EMU(\d+)$/.exec(gelo || '');
+  if (m) return `${m[1]} Emu`;
+  return gelo || '—';
+}
+
 /* ------------------------------------------------------------------ PAINEL */
 
-/** Uma linha por modo de gelo que tem gente — "emoji Gelo X | @a, @b". Modo vazio nem aparece. */
+/** Uma linha por opção que tem gente — "emoji Rótulo | @a, @b". Opção vazia nem aparece. */
 function linhasJogadores(q) {
   const lista = entradas(q.id);
-  const porGelo = (g) => lista.filter((e) => e.gelo === g);
 
-  const linhas = [
-    ['INFINITO', '<:infinito:1542027016768069702>'],
-    ['NORMAL', '<:glo:1542027218341994618>'],
-  ]
-    .map(([g, emoji]) => {
-      const gente = porGelo(g);
-      return gente.length ? `${emoji} ${GELO[g]} | ${gente.map((e) => `<@${e.user_id}>`).join(', ')}` : null;
+  const linhas = opcoesModo(q.modalidade)
+    .map(({ valor, label, emoji }) => {
+      const gente = lista.filter((e) => e.gelo === valor);
+      return gente.length ? `${emoji} ${label} | ${gente.map((e) => `<@${e.user_id}>`).join(', ')}` : null;
     })
     .filter(Boolean);
 
@@ -40,20 +77,18 @@ function linhasJogadores(q) {
 
 function painel(q, { bannerUrl = null } = {}) {
   const banner = bannerUrl || q.banner;
+  const campoModo = `<:pt:1542011838487597076> Modo de Jogo\n**${q.modalidade}**`;
+  const opcoes = opcoesModo(q.modalidade);
 
   return ui.bloco(cfg.COR.primaria,
-    // Banner largo no topo, acima de tudo.
-    banner ? ui.imagem(banner) : null,
-    ui.divisor(),
-    // Campos com rotulo em cima e valor em negrito embaixo.
-    ui.txt(`<:pt:1542011838487597076> Modo de Jogo\n**${q.modalidade}**`),
+    // Banner pequeno no canto (thumbnail), preso ao campo de modo de jogo.
+    banner ? ui.comThumb([campoModo], banner) : ui.txt(campoModo),
     ui.txt(`<:cifrao:1542021614600978452> Valor Partida\n**${money.fmt(q.valor)}**`),
     ui.divisor(),
     ui.txt(`<:duas:1542028376452370482> Jogadores na fila\n${linhasJogadores(q)}`),
     ui.divisor(),
     ui.linhaBotoes(
-      ui.botao(`queue:join:${q.id}:INFINITO`, 'Gelo Infinito', { emoji: '<:infinito:1542027016768069702>' }),
-      ui.botao(`queue:join:${q.id}:NORMAL`, 'Gelo Normal', { emoji: '<:glo:1542027218341994618>' }),
+      ...opcoes.map(({ valor, label, emoji }) => ui.botao(`queue:join:${q.id}:${valor}`, label, { emoji })),
       ui.botao(`queue:leave:${q.id}`, 'Sair', { estilo: ui.ESTILO.Danger }),
     ),
   );
@@ -214,6 +249,7 @@ const sairDaFila = db.transaction((queueId, userId) => {
 
 module.exports = {
   GELO, MODALIDADES, getQueue, entradas,
+  ehMisto, tamanhoTime, opcoesModo, rotuloModo,
   linhasJogadores, painel, arteLocal, mensagemPainel, atualizarPainel, publicarPainel,
   entrarNaFila, sairDaFila, semSaldoResposta,
 };

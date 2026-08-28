@@ -3,6 +3,7 @@ const ui = require('./ui');
 const { COR } = require('../config');
 const money = require('./money');
 const banners = require('./banners');
+const fila = require('../features/fila');
 
 // Emojis customizados da ACE, reaproveitados dos paineis para o log ter a mesma cara.
 // Nunca colocar esses emojis dentro de ui.tabela(): o bloco de codigo que ela usa
@@ -105,7 +106,7 @@ module.exports = {
       ui.divisor(),
       ui.txt(
         `**Modalidade:** ${m.modalidade}\n` +
-        `**Modo:** ${m.gelo === 'INFINITO' ? 'Gelo Infinito' : 'Gelo Normal'}\n` +
+        `**Modo:** ${fila.rotuloModo(m.gelo)}\n` +
         `${E.cifrao} **Valor por jogador:** ${money.fmt(m.valor)}\n` +
         `${E.cifrao} **Premio pago:** ${money.fmt(m.valor * 2 - m.taxa)}\n` +
         `${E.cifrao} **Taxa da organizacao:** ${money.fmt(m.taxa)}`

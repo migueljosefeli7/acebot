@@ -34,4 +34,5 @@ module.exports = {
   moeda: '🪙',        // pontos/coins genericos (distinto de cifrao = dinheiro real)
   troféu: '🏆',
   aviso: '⚠️',
+  emulador: '🖥️',     // fila Misto (quantidade de EMU no time)
 };

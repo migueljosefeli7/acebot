@@ -12,6 +12,7 @@ const logs = require('../lib/logs');
 const gc = require('../lib/guildconfig');
 const notificar = require('../lib/notificar');
 const banners = require('../lib/banners');
+const fila = require('./fila');
 
 const get = (id) => db.prepare('SELECT * FROM matches WHERE id = ?').get(id);
 const getByThread = (threadId) => db.prepare('SELECT * FROM matches WHERE thread_id = ? ORDER BY id DESC LIMIT 1').get(threadId);
@@ -19,7 +20,7 @@ const setStatus = (id, status) => db.prepare('UPDATE matches SET status = ? WHER
 const oponente = (m, userId) => (m.p1 === userId ? m.p2 : m.p1);
 const ehJogador = (m, userId) => m.p1 === userId || m.p2 === userId;
 const premio = (m) => m.valor * 2 - m.taxa;
-const modo = (m) => (m.gelo === 'INFINITO' ? 'Gelo Infinito' : 'Gelo Normal');
+const modo = (m) => fila.rotuloModo(m.gelo);
 const LINK_REGRAS = 'https://discord.com/channels/1541905325895065671/1541922210028064798';
 
 const STATUS = {
