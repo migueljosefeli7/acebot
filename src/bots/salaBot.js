@@ -1,0 +1,65 @@
+/**
+ * Bot "criador de salas": loga com token de conta de usuario comum (selfbot) e manda
+ * +cs 1/2/3 no ticket assim que a partida entra em AGUARDANDO_SALA. Roda como um
+ * client separado do bot principal porque usa uma biblioteca e um tipo de token diferentes.
+ *
+ * Aviso: automatizar uma conta de usuario viola os Termos de Servico do Discord e
+ * arrisca banimento da conta usada. Uso por conta e risco de quem configurou o token.
+ */
+const cfg = require('../config');
+
+let client = null;
+let pronto = false;
+
+function tipoDaSala(m) {
+  if ((m.modalidade || '').includes('Tático')) return 3;
+  if (m.gelo === 'INFINITO') return 2;
+  return 1;
+}
+
+async function iniciar() {
+  if (!cfg.salaBot.token) {
+    console.log('ℹ️  [sala-bot] SALA_BOT_TOKEN não configurado — recurso desligado.');
+    return;
+  }
+
+  // Import tardio: se a lib nao estiver instalada e o recurso estiver desligado,
+  // o bot principal nao deve quebrar por causa disso.
+  let SelfClient;
+  try {
+    ({ Client: SelfClient } = require('discord.js-selfbot-v13'));
+  } catch {
+    console.error('❌ [sala-bot] pacote "discord.js-selfbot-v13" não instalado. Rode: npm install');
+    return;
+  }
+
+  client = new SelfClient({ checkUpdate: false });
+
+  client.once('ready', () => {
+    pronto = true;
+    console.log(`🎮 [sala-bot] Online como ${client.user.tag}`);
+  });
+
+  client.on('error', (e) => console.error('❌ [sala-bot] erro:', e.message));
+
+  try {
+    await client.login(cfg.salaBot.token);
+  } catch (e) {
+    console.error('❌ [sala-bot] falha ao logar com SALA_BOT_TOKEN:', e.message);
+    client = null;
+  }
+}
+
+/** Manda +cs N no canal do ticket. Nunca lança — falha aqui não pode travar o bot principal. */
+async function enviarComandoSala(channelId, m) {
+  if (!pronto || !client) return;
+  try {
+    const canal = await client.channels.fetch(channelId);
+    if (!canal) return;
+    await canal.send(`+cs ${tipoDaSala(m)}`);
+  } catch (e) {
+    console.error(`❌ [sala-bot] falha ao enviar +cs no canal ${channelId}:`, e.message);
+  }
+}
+
+module.exports = { iniciar, enviarComandoSala, tipoDaSala };

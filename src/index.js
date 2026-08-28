@@ -11,9 +11,11 @@ const handleInteraction = require('./interactions');
 const onSugestao = require('./events/sugestao');
 const onCompletar = require('./events/completar');
 const onIaChat = require('./events/iaChat');
+const onSalaCriada = require('./events/salaCriada');
 const membros = require('./lib/membros');
 const ratelimit = require('./lib/ratelimit');
 const { iniciarWebhook } = require('./web/server');
+const salaBot = require('./bots/salaBot');
 
 if (!cfg.token || !cfg.clientId) {
   console.error('❌ Faltou DISCORD_TOKEN ou CLIENT_ID no arquivo .env');
@@ -104,6 +106,7 @@ client.on(Events.InteractionCreate, handleInteraction);
 client.on(Events.MessageCreate, onSugestao);
 client.on(Events.MessageCreate, onCompletar);
 client.on(Events.MessageCreate, onIaChat);
+client.on(Events.MessageCreate, onSalaCriada);
 
 /* ------------------------------------------------- LIMPEZA DE PENDENCIAS */
 
@@ -167,3 +170,4 @@ for (const sinal of ['SIGINT', 'SIGTERM']) {
 
 iniciarWebhook(client);
 client.login(cfg.token);
+salaBot.iniciar();

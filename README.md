@@ -183,6 +183,37 @@ encaminhados à equipe.
 
 ---
 
+## Bot criador de salas (opcional)
+
+Quando a partida entra em **AGUARDANDO CRIAÇÃO DA SALA**, o bot manda automaticamente
+`+cs 1`, `+cs 2` ou `+cs 3` no ticket, conforme a modalidade:
+
+| Comando | Quando |
+|---|---|
+| `+cs 1` | Salas Padrão (Gelo Normal, exceto Tático) |
+| `+cs 2` | Salas Gelo Infinito |
+| `+cs 3` | Salas Tático |
+
+Para isso funcionar, esse recurso usa o **token de uma conta de usuário comum** do
+Discord (não é uma aplicação Bot registrada), porque precisa aparecer como uma pessoa
+digitando o comando no canal.
+
+> ⚠️ **Automatizar uma conta de usuário viola os Termos de Serviço do Discord** e a
+> conta usada corre risco real de ser banida. Use uma conta secundária, nunca a sua
+> principal, e por sua conta e risco.
+
+1. Pegue o token da conta que vai mandar os comandos (Configurações do Discord no
+   navegador → Ferramentas de desenvolvedor → aba Network → qualquer request → header
+   `authorization`, ou uma extensão própria para isso).
+2. Coloque em `SALA_BOT_TOKEN` no `.env`.
+3. Reinicie o bot. Se o token não estiver preenchido, o recurso fica desligado e o
+   resto do bot funciona normalmente.
+
+Assim que o bot externo (ex: **ACE Salas**) responde no ticket confirmando
+"**A Sala foi criada!**", o ACEBOT detecta essa mensagem automaticamente e já avança
+a partida para **PARTIDA EM ANDAMENTO** sozinho — ninguém precisa clicar em
+`SALA CRIADA · INICIAR`.
+
 ## Vouchers
 
 Codigo de bonus que a staff cria e o jogador resgata no botao **VOUCHER** do painel.

@@ -13,6 +13,7 @@ const gc = require('../lib/guildconfig');
 const notificar = require('../lib/notificar');
 const banners = require('../lib/banners');
 const fila = require('./fila');
+const salaBot = require('../bots/salaBot');
 
 const get = (id) => db.prepare('SELECT * FROM matches WHERE id = ?').get(id);
 const getByThread = (threadId) => db.prepare('SELECT * FROM matches WHERE thread_id = ? ORDER BY id DESC LIMIT 1').get(threadId);
@@ -515,6 +516,8 @@ async function confirmarRegras(interaction, matchId) {
     ),
   )));
 
+  salaBot.enviarComandoSala(interaction.channel.id, m).catch(() => {});
+
   await atualizarPainel(interaction.client, matchId);
 }
 
@@ -565,6 +568,38 @@ async function iniciarPartida(interaction, matchId) {
   await interaction.channel.send(ui.msg(painelSuporte(get(matchId)))).catch(() => {});
 
   await atualizarPainel(interaction.client, matchId);
+}
+
+/**
+ * Mesma transição de iniciarPartida, mas disparada sozinha quando o bot externo
+ * de criação de sala confirma a sala no ticket — sem precisar de um jogador clicar
+ * em SALA CRIADA · INICIAR. Ver src/events/salaCriada.js.
+ */
+async function iniciarPartidaAutomatico(client, matchId) {
+  const m = get(matchId);
+  if (!m || m.status !== 'AGUARDANDO_SALA') return false;
+
+  setStatus(matchId, 'EM_ANDAMENTO');
+
+  const canal = m.thread_id ? await client.channels.fetch(m.thread_id).catch(() => null) : null;
+  if (canal) {
+    await canal.send(ui.msg(ui.bloco(cfg.COR.primaria,
+      ui.titulo('🔴 PARTIDA INICIADA'),
+      ui.nota(`Partida #${matchId} · sala confirmada automaticamente`),
+      ui.divisor(),
+      ui.txt(
+        'Boa sorte!\n\n' +
+        '🏁 Quando acabar, **um jogador seleciona quem venceu no painel da partida** e o adversário confirma. ' +
+        'Se houver qualquer problema, use **CHAMAR SUPORTE**.'
+      ),
+    ))).catch(() => {});
+
+    // Fica no ticket durante a partida como um SOS permanente para os jogadores.
+    await canal.send(ui.msg(painelSuporte(get(matchId)))).catch(() => {});
+  }
+
+  await atualizarPainel(client, matchId);
+  return true;
 }
 
 /* --------------------------------------------------------- QUEBRA DE REGRA */
@@ -2066,7 +2101,7 @@ module.exports = {
   get, getByThread, oponente, ehJogador, premio, painel, botoes, atualizarPainel,
   devendo, pagouTudo, cobrancaNoTicket, registrarPagamento, registrarPagamentoPorSaldo,
   botoesVeredito, fecharTicket, abrirTicket, avisarNoPv, modalRegras, proporRegras,
-  confirmarRegras, recusarRegras, iniciarPartida,
+  confirmarRegras, recusarRegras, iniciarPartida, iniciarPartidaAutomatico,
   vencedorPelosClaims, recuperarResultadosPendentes, resolverAbandonos,
   selecionarVencedor, confirmarVencedor, cancelarEscolhaVencedor, chamarSuporte, chamarVarStaff,
   modalRevanche, abrirModalRevanche, proporRevanche, aceitarRevanche, recusarRevanche,

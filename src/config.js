@@ -11,6 +11,12 @@ module.exports = {
   clientId: process.env.CLIENT_ID,
   guildId: process.env.GUILD_ID,
 
+  // Bot criador de salas: loga com token de conta de usuario (selfbot) e manda
+  // +cs 1/2/3 no ticket quando a partida entra em AGUARDANDO_SALA. Vazio = desligado.
+  salaBot: {
+    token: process.env.SALA_BOT_TOKEN || '',
+  },
+
   openaiApiKey: process.env.OPENAI_API_KEY,
   openaiModel: process.env.OPENAI_MODEL || 'gpt-5.6-luna',
   iaMaxTokens: int(process.env.IA_MAX_OUTPUT_TOKENS, 500),
