@@ -339,13 +339,13 @@ sudo npm install -g pm2
 Mande a pasta para o servidor (sem `node_modules` e sem `.env`), então:
 
 ```bash
-cd ~/ZE-BOT && npm install --omit=dev
+cd ~/ACEBOT && npm install --omit=dev
 ```
 
 Crie o `.env` no servidor com `PUBLIC_URL=https://seudominio.com`, e suba:
 
 ```bash
-pm2 start src/index.js --name ze-bot && pm2 save && pm2 startup
+pm2 start src/index.js --name acebot && pm2 save && pm2 startup
 ```
 
 Nginx na frente, para o webhook do PIX chegar com HTTPS:
@@ -362,7 +362,7 @@ Certificado: `sudo certbot --nginx -d seudominio.com`.
 **Backup do banco** (é onde está o saldo de todo mundo):
 
 ```bash
-cp ~/ZE-BOT/data/ze.db ~/backup/ze-$(date +%F).db
+cp ~/ACEBOT/data/ace.db ~/backup/ace-$(date +%F).db
 ```
 
-Logs: `pm2 logs ze-bot` · Reiniciar: `pm2 restart ze-bot`
+Logs: `pm2 logs acebot` · Reiniciar: `pm2 restart acebot`

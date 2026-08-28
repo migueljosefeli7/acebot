@@ -41,7 +41,7 @@ async function criarPix({ amount, userId, username, depositId }) {
       external_reference: String(depositId),
       payer: {
         // Mercado Pago exige um email. Sem email real do jogador, usamos um sintetico.
-        email: `player${userId}@zebot.local`,
+        email: `player${userId}@acebot.local`,
         first_name: (username || 'Player').slice(0, 40),
       },
       metadata: { deposit_id: depositId, discord_id: userId },

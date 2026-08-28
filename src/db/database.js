@@ -4,7 +4,7 @@ const Database = require('better-sqlite3');
 
 // DB_FILE aponta para outro banco. Usado nos testes, para nunca encostar no
 // banco de producao que guarda o saldo dos jogadores.
-const dbPath = process.env.DB_FILE || path.join(__dirname, '..', '..', 'data', 'ze.db');
+const dbPath = process.env.DB_FILE || path.join(__dirname, '..', '..', 'data', 'ace.db');
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const db = new Database(dbPath);

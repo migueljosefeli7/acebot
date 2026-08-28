@@ -1,5 +1,5 @@
 {
-  "name": "ze-bot",
+  "name": "acebot",
   "version": "1.0.0",
   "description": "Bot de apostas Free Fire - saldo PIX, filas e tickets de partida",
   "main": "src/index.js",
