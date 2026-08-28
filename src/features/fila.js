@@ -20,56 +20,41 @@ const entradas = (queueId) =>
 
 /* ------------------------------------------------------------------ PAINEL */
 
-function dadosDaFila(q) {
+/** Uma linha por modo de gelo que tem gente — "emoji Gelo X | @a, @b". Modo vazio nem aparece. */
+function linhasJogadores(q) {
   const lista = entradas(q.id);
   const porGelo = (g) => lista.filter((e) => e.gelo === g);
 
-  const jogadores = (g) => porGelo(g)
-    .map((e) => `└ <@${e.user_id}>${e.pago ? '' : ' · 💳 paga no ticket'}`)
-    .join('\n') || '_ninguém na fila_';
+  const linhas = [
+    ['INFINITO', '<:infinito:1542027016768069702>'],
+    ['NORMAL', '<:glo:1542027218341994618>'],
+  ]
+    .map(([g, emoji]) => {
+      const gente = porGelo(g);
+      return gente.length ? `${emoji} ${GELO[g]} | ${gente.map((e) => `<@${e.user_id}>`).join(', ')}` : null;
+    })
+    .filter(Boolean);
 
-  const linha = (g, emoji) => {
-    const gente = porGelo(g);
-    return gente.length
-      ? `${emoji} **${GELO[g]}** · ${gente.length} na fila\n` +
-        gente.map((e) => `└ <@${e.user_id}>${e.pago ? '' : ' · 💳 paga no ticket'}`).join('\n')
-      : `${emoji} **${GELO[g]}** · _ninguém na fila_`;
-  };
-
-  return {
-    total: lista.length,
-    totalInfinito: porGelo('INFINITO').length,
-    totalNormal: porGelo('NORMAL').length,
-    jogadoresInfinito: jogadores('INFINITO'),
-    jogadoresNormal: jogadores('NORMAL'),
-    infinito: linha('INFINITO', '<:infinito:1542027016768069702>'),
-    normal: linha('NORMAL', '<:glo:1542027218341994618>'),
-  };
+  return linhas.length ? linhas.join('\n') : '_ninguém na fila_';
 }
 
 function painel(q, { bannerUrl = null } = {}) {
-  const dados = dadosDaFila(q);
   const banner = bannerUrl || q.banner;
-  const cabecalho = [`## ${q.modalidade}`,
-    `-# Fila #${q.id} · a partida fecha com 1 jogador de cada lado no mesmo modo`];
-  const premio = q.valor * 2 - cfg.taxaPartida;
 
   return ui.bloco(cfg.COR.primaria,
     // Banner pequeno no canto (thumbnail), nao mais a imagem larga.
-    banner ? ui.comThumb(cabecalho, banner) : [ui.titulo(q.modalidade), ui.nota(cabecalho[1].replace(/^-#\s*/, ''))],
+    banner ? ui.comThumb([`## ${q.modalidade}`], banner) : ui.titulo(q.modalidade),
     ui.divisor(),
     // Campo com rotulo em cima e valor em negrito embaixo — limpo, sem misturar tamanho de titulo.
     ui.txt(`<:cifrao:1542021614600978452> Valor Partida\n**${money.fmt(q.valor)}**`),
-    ui.txt(`<:cifrao:1542021614600978452> Prêmio ao vencedor\n**${money.fmt(premio)}**`),
     ui.divisor(),
-    ui.txt(`<:duas:1542028376452370482> Jogadores na fila\n${dados.infinito}\n\n${dados.normal}`),
+    ui.txt(`<:duas:1542028376452370482> Jogadores na fila\n${linhasJogadores(q)}`),
     ui.divisor(),
     ui.linhaBotoes(
       ui.botao(`queue:join:${q.id}:INFINITO`, 'Gelo Infinito', { emoji: '<:infinito:1542027016768069702>' }),
       ui.botao(`queue:join:${q.id}:NORMAL`, 'Gelo Normal', { emoji: '<:glo:1542027218341994618>' }),
       ui.botao(`queue:leave:${q.id}`, 'Sair', { estilo: ui.ESTILO.Danger }),
     ),
-    ui.nota('Com saldo, o valor é reservado ao entrar. Sem saldo, você paga essa partida no ticket.'),
   );
 }
 
@@ -228,6 +213,6 @@ const sairDaFila = db.transaction((queueId, userId) => {
 
 module.exports = {
   GELO, MODALIDADES, getQueue, entradas,
-  dadosDaFila, painel, arteLocal, mensagemPainel, atualizarPainel, publicarPainel,
+  linhasJogadores, painel, arteLocal, mensagemPainel, atualizarPainel, publicarPainel,
   entrarNaFila, sairDaFila, semSaldoResposta,
 };
