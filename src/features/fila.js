@@ -49,17 +49,17 @@ function dadosDaFila(q) {
 
 function painel(q, { bannerUrl = null } = {}) {
   const dados = dadosDaFila(q);
+  const banner = bannerUrl || q.banner;
+  const cabecalho = [`## <:pt:1542011838487597076> ${q.modalidade}`,
+    `-# Fila #${q.id} · a partida fecha com 1 jogador de cada lado no mesmo modo`];
 
   return ui.bloco(cfg.COR.primaria,
-    ui.titulo(`<:pt:1542011838487597076> ${q.modalidade}`),
-    ui.nota(`Fila #${q.id} · a partida fecha com 1 jogador de cada lado no mesmo modo`),
-    (bannerUrl || q.banner) ? ui.imagem(bannerUrl || q.banner) : null,
+    // Banner pequeno no canto (thumbnail), nao mais a imagem larga.
+    banner ? ui.comThumb(cabecalho, banner) : [ui.titulo(cabecalho[0].replace(/^##\s*/, '')), ui.nota(cabecalho[1].replace(/^-#\s*/, ''))],
     ui.divisor(),
-    ui.txt(
-      `<:cifrao:1542021614600978452> **Valor por jogador:** ${money.fmt(q.valor)}\n` +
-      `<:cifrao:1542021614600978452> **Premio ao vencedor:** ${money.fmt(q.valor * 2 - cfg.taxaPartida)}\n` +
-      `<:logored:1542019888095301642> **Taxa da organizacao:** ${money.fmt(cfg.taxaPartida)}`
-    ),
+    // Valor apostado em destaque (mesmo tamanho do titulo) pra nao se confundir com o premio.
+    ui.titulo(`<:cifrao:1542021614600978452> ${money.fmt(q.valor)} por jogador`),
+    ui.txt(`<:cifrao:1542021614600978452> **Prêmio ao vencedor:** ${money.fmt(q.valor * 2 - cfg.taxaPartida)}`),
     ui.divisor(),
     ui.secao('<:duas:1542028376452370482> Jogadores na fila'),
     ui.txt(`${dados.infinito}\n\n${dados.normal}`),
