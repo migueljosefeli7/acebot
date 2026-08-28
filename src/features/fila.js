@@ -42,10 +42,11 @@ function painel(q, { bannerUrl = null } = {}) {
   const banner = bannerUrl || q.banner;
 
   return ui.bloco(cfg.COR.primaria,
-    // Banner pequeno no canto (thumbnail), nao mais a imagem larga.
-    banner ? ui.comThumb([`## ${q.modalidade}`], banner) : ui.titulo(q.modalidade),
+    // Banner largo no topo, acima de tudo.
+    banner ? ui.imagem(banner) : null,
     ui.divisor(),
-    // Campo com rotulo em cima e valor em negrito embaixo — limpo, sem misturar tamanho de titulo.
+    // Campos com rotulo em cima e valor em negrito embaixo.
+    ui.txt(`<:pt:1542011838487597076> Modo de Jogo\n**${q.modalidade}**`),
     ui.txt(`<:cifrao:1542021614600978452> Valor Partida\n**${money.fmt(q.valor)}**`),
     ui.divisor(),
     ui.txt(`<:duas:1542028376452370482> Jogadores na fila\n${linhasJogadores(q)}`),
