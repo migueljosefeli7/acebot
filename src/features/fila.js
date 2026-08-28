@@ -133,30 +133,6 @@ async function publicarPainel(channel, q) {
 /* -------------------------------------------------------------- ENTRAR/SAIR */
 
 /**
- * Aviso para quem entrou na fila sem saldo. Não bloqueia: explica que o
- * pagamento daquela partida acontece dentro do ticket.
- */
-const semSaldoResposta = (falta, saldo, valor) => ui.msg(ui.bloco(cfg.COR.aviso,
-  ui.titulo('⚠️ VOCÊ ENTROU SEM SALDO'),
-  ui.txt('Tudo certo — quando a partida fechar, **você paga essa partida direto no ticket** por PIX.'),
-  ui.divisor(),
-  ui.tabela([
-    ['Custo da partida', money.fmt(valor)],
-    ['Seu saldo', money.fmt(saldo)],
-    ['Falta pagar', money.fmt(falta)],
-  ]),
-  ui.divisor(),
-  ui.txt(
-    'Se preferir, deposite agora e o valor já fica reservado ao entrar na fila.\n' +
-    '⏱️ Se você não pagar no prazo, a partida é cancelada e o adversário recebe o dinheiro de volta.'
-  ),
-  ui.linhaBotoes(
-    ui.botao('wallet:deposit', 'DEPOSITAR AGORA', { estilo: ui.ESTILO.Success, emoji: '📥' }),
-    ui.botao('wallet:profile', 'MEU PERFIL', { emoji: '👤' }),
-  ),
-), { efemero: true });
-
-/**
  * Entra na fila. Retorna { erro } ou { ok: true, matchId? }.
  *
  * O emparelhamento e feito dentro da mesma transacao da insercao para nao
@@ -247,9 +223,62 @@ const sairDaFila = db.transaction((queueId, userId) => {
   return { ok: true, valor: q && e.pago ? q.valor : 0 };
 });
 
+/* ------------------------------------------------------------- GERENCIAR */
+
+const listarTodas = (guildId) => db.prepare('SELECT * FROM queues WHERE guild_id = ? ORDER BY id').all(guildId);
+
+async function republicarUma(client, q) {
+  const ch = await client.channels.fetch(q.channel_id);
+  await publicarPainel(ch, q);
+  return ch;
+}
+
+/** Republica o painel de toda fila ATIVA do servidor de uma vez (usado sem passar ID). */
+async function republicarTodas(client, guildId) {
+  const ativas = db.prepare('SELECT * FROM queues WHERE guild_id = ? AND ativo = 1').all(guildId);
+  let ok = 0;
+  const falhas = [];
+  for (const q of ativas) {
+    try {
+      await republicarUma(client, q);
+      ok++;
+    } catch (e) {
+      falhas.push({ id: q.id, motivo: e.message });
+      console.error(`[fila] falha ao republicar #${q.id}:`, e.message);
+    }
+  }
+  return { total: ativas.length, ok, falhas };
+}
+
+/** Desativa (soft): devolve saldo travado, some com o painel, mas mantém o registro no banco. */
+async function desativar(client, q) {
+  const devolvidos = entradas(q.id);
+  for (const e of devolvidos) {
+    try { wallet.unlock(e.user_id, q.valor); } catch { /* trava ja resolvida */ }
+  }
+  db.prepare('DELETE FROM queue_entries WHERE queue_id = ?').run(q.id);
+  db.prepare('UPDATE queues SET ativo = 0 WHERE id = ?').run(q.id);
+
+  try {
+    const ch = await client.channels.fetch(q.channel_id);
+    const msg = await ch.messages.fetch(q.message_id);
+    await msg.delete();
+  } catch { /* mensagem ja apagada */ }
+
+  return devolvidos;
+}
+
+/** Apaga PRA SEMPRE: some do banco de verdade (nao so ativo=0) — irreversivel. */
+async function apagarPermanente(client, q) {
+  const devolvidos = await desativar(client, q);
+  db.prepare('DELETE FROM queues WHERE id = ?').run(q.id);
+  return devolvidos;
+}
+
 module.exports = {
-  GELO, MODALIDADES, getQueue, entradas,
+  GELO, MODALIDADES, getQueue, entradas, listarTodas,
   ehMisto, tamanhoTime, opcoesModo, rotuloModo,
   linhasJogadores, painel, arteLocal, mensagemPainel, atualizarPainel, publicarPainel,
-  entrarNaFila, sairDaFila, semSaldoResposta,
+  republicarUma, republicarTodas, desativar, apagarPermanente,
+  entrarNaFila, sairDaFila,
 };

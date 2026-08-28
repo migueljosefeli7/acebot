@@ -1,4 +1,4 @@
-const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 
 const cfg = require('./config');
 const ui = require('./lib/ui');
@@ -54,11 +54,9 @@ async function entrarFila(interaction, queueId, gelo) {
   }
   if (!r.ok) return nao(interaction, 'Não consegui te colocar na fila', 'Tente de novo em instantes.');
 
-  // Entrou com saldo: sem pop-up, o painel já mostra quem está na fila.
-  // Entrou sem saldo: é o único caso que merece aviso, explicando que vai
-  // pagar aquela partida dentro do ticket.
-  if (r.pago) await interaction.deferUpdate();
-  else await interaction.reply(fila.semSaldoResposta(r.falta, r.saldo, r.queue.valor));
+  // Sem pop-up nenhum ao entrar (com ou sem saldo) — o canal da fila mostra só
+  // o painel. Quem entrou sem saldo paga a partida dentro do ticket quando fechar.
+  await interaction.deferUpdate();
 
   if (r.filaAnterior) await fila.atualizarPainel(interaction.client, r.filaAnterior);
   await fila.atualizarPainel(interaction.client, queueId);
@@ -150,6 +148,83 @@ async function onButton(interaction) {
         return nao(interaction, 'Sem permissão', 'Só a staff resolve pedidos da loja.');
       }
       return loja.resolverPedido(interaction, Number(a), acao === 'entregue');
+    }
+  }
+
+  if (ns === 'fila') {
+    if (!gc.hasRole(interaction.member, 'cargo_staff')) {
+      return nao(interaction, 'Sem permissão', 'Só a staff gerencia filas.');
+    }
+
+    if (acao === 'gerenciar') {
+      const rows = fila.listarTodas(interaction.guildId);
+      if (!rows.length) {
+        return interaction.reply(ui.msg(ui.bloco(cfg.COR.neutro,
+          ui.titulo('📋 NENHUMA FILA'),
+          ui.txt('Crie a primeira com `/fila criar`.'),
+        ), { efemero: true }));
+      }
+
+      const select = new StringSelectMenuBuilder().setCustomId('fila:selecionar')
+        .setPlaceholder('Escolha uma fila para gerenciar')
+        .addOptions(rows.slice(0, 25).map((q) => ({
+          label: `#${q.id} · ${q.modalidade} · ${money.fmt(q.valor)}`.slice(0, 100),
+          description: `${q.ativo ? 'Ativa' : 'Inativa'} · canal ${q.channel_id}`.slice(0, 100),
+          value: String(q.id),
+        })));
+
+      return interaction.reply({
+        components: [new ActionRowBuilder().addComponents(select)],
+        flags: ui.EFEMERO,
+      });
+    }
+
+    const id = Number(a);
+    const q = fila.getQueue(id);
+    if (!q || q.guild_id !== interaction.guildId) {
+      return nao(interaction, 'Fila não encontrada', `Não existe fila #${id} neste servidor.`);
+    }
+
+    if (acao === 'republicar') {
+      const ch = await fila.republicarUma(interaction.client, q);
+      return interaction.update(ui.msg(ui.bloco(cfg.COR.sucesso,
+        ui.titulo('✅ PAINEL REPUBLICADO'),
+        ui.txt(`Fila #${id} está de volta em ${ch}.`),
+      )));
+    }
+
+    if (acao === 'desativar') {
+      const devolvidos = await fila.desativar(interaction.client, q);
+      return interaction.update(ui.msg(ui.bloco(cfg.COR.aviso,
+        ui.titulo('🚫 FILA DESATIVADA'),
+        ui.txt(`Fila #${id} desativada. ${devolvidos.length} jogador(es) estornado(s).`),
+      )));
+    }
+
+    if (acao === 'apagarpedir') {
+      return interaction.update(ui.msg(ui.bloco(cfg.COR.erro,
+        ui.titulo('⚠️ CONFIRMA APAGAR PRA SEMPRE?'),
+        ui.txt(`A fila #${id} (**${q.modalidade}**) vai sumir do banco de dados. Isso não pode ser desfeito.`),
+        ui.linhaBotoes(
+          ui.botao(`fila:apagarconfirmar:${id}`, 'SIM, APAGAR', { estilo: ui.ESTILO.Danger }),
+          ui.botao(`fila:apagarcancelar:${id}`, 'Cancelar', { estilo: ui.ESTILO.Secondary }),
+        ),
+      )));
+    }
+
+    if (acao === 'apagarconfirmar') {
+      const devolvidos = await fila.apagarPermanente(interaction.client, q);
+      return interaction.update(ui.msg(ui.bloco(cfg.COR.erro,
+        ui.titulo('🗑️ FILA APAGADA PRA SEMPRE'),
+        ui.txt(`Fila #${id} removida do banco. ${devolvidos.length} jogador(es) estornado(s).`),
+      )));
+    }
+
+    if (acao === 'apagarcancelar') {
+      return interaction.update(ui.msg(ui.bloco(cfg.COR.neutro,
+        ui.titulo('↩️ CANCELADO'),
+        ui.txt('Nada foi apagado.'),
+      )));
     }
   }
 
@@ -297,6 +372,35 @@ async function onSelect(interaction) {
   if (ns === 'match' && acao === 'winner') {
     return partida.selecionarVencedor(interaction, Number(id), interaction.values[0]);
   }
+
+  if (ns === 'fila' && acao === 'selecionar') {
+    if (!gc.hasRole(interaction.member, 'cargo_staff')) {
+      return nao(interaction, 'Sem permissão', 'Só a staff gerencia filas.');
+    }
+
+    const qid = Number(interaction.values[0]);
+    const q = fila.getQueue(qid);
+    if (!q) return nao(interaction, 'Fila não encontrada', `Não existe mais a fila #${qid}.`);
+
+    const n = fila.entradas(qid).length;
+    return interaction.update(ui.msg(ui.bloco(q.ativo ? cfg.COR.primaria : cfg.COR.neutro,
+      ui.titulo(`🛠️ GERENCIANDO FILA #${qid}`),
+      ui.divisor(),
+      ui.tabela([
+        ['Modalidade', q.modalidade],
+        ['Valor', money.fmt(q.valor)],
+        ['Status', q.ativo ? 'Ativa' : 'Inativa'],
+        ['Na fila agora', String(n)],
+        ['Canal', `<#${q.channel_id}>`],
+      ]),
+      ui.linhaBotoes(
+        ui.botao(`fila:republicar:${qid}`, 'Republicar', { estilo: ui.ESTILO.Primary, emoji: '🔄' }),
+        ui.botao(`fila:desativar:${qid}`, 'Desativar', { estilo: ui.ESTILO.Secondary, emoji: '⚪' }),
+        ui.botao(`fila:apagarpedir:${qid}`, 'Apagar Pra Sempre', { estilo: ui.ESTILO.Danger, emoji: '🗑️' }),
+      ),
+    )));
+  }
+
   if (ns !== 'loja' || acao !== 'comprar') return;
 
   const itemId = Number(interaction.values[0]);

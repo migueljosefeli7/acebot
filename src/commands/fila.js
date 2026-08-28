@@ -3,7 +3,6 @@ const db = require('../db/database');
 const cfg = require('../config');
 const ui = require('../lib/ui');
 const money = require('../lib/money');
-const wallet = require('../lib/wallet');
 const fila = require('../features/fila');
 
 const erro = (interaction, titulo, texto) => interaction.reply(ui.msg(
@@ -23,13 +22,16 @@ module.exports = {
       .addChannelOption((o) => o.setName('canal').setDescription('Canal do painel (padrão: o atual)').addChannelTypes(ChannelType.GuildText))
       .addStringOption((o) => o.setName('banner').setDescription('URL da imagem/banner do painel')))
 
-    .addSubcommand((s) => s.setName('listar').setDescription('Lista as filas do servidor'))
+    .addSubcommand((s) => s.setName('listar').setDescription('Lista as filas do servidor (com botão de gerenciar)'))
 
     .addSubcommand((s) => s.setName('remover').setDescription('Desativa uma fila e devolve o saldo de quem estava nela')
       .addIntegerOption((o) => o.setName('id').setDescription('ID da fila (veja em /fila listar)').setRequired(true)))
 
-    .addSubcommand((s) => s.setName('republicar').setDescription('Reposta o painel de uma fila (se a mensagem sumiu)')
-      .addIntegerOption((o) => o.setName('id').setDescription('ID da fila').setRequired(true))),
+    .addSubcommand((s) => s.setName('apagar').setDescription('Apaga uma fila PRA SEMPRE (remove do banco, não só desativa)')
+      .addIntegerOption((o) => o.setName('id').setDescription('ID da fila').setRequired(true)))
+
+    .addSubcommand((s) => s.setName('republicar').setDescription('Reposta o painel de uma fila — sem ID, republica TODAS as ativas')
+      .addIntegerOption((o) => o.setName('id').setDescription('ID da fila (deixe vazio pra republicar todas)'))),
 
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
@@ -51,7 +53,7 @@ module.exports = {
       ).run(interaction.guildId, canal.id, modalidade, valor, banner || null, Date.now());
 
       const q = fila.getQueue(info.lastInsertRowid);
-      await fila.publicarPainel(canal, q);
+      await fila.republicarUma(interaction.client, q);
 
       return interaction.reply(ui.msg(ui.bloco(cfg.COR.sucesso,
         ui.titulo('✅ FILA CRIADA'),
@@ -67,7 +69,7 @@ module.exports = {
     }
 
     if (sub === 'listar') {
-      const rows = db.prepare('SELECT * FROM queues WHERE guild_id = ? ORDER BY id').all(interaction.guildId);
+      const rows = fila.listarTodas(interaction.guildId);
       if (!rows.length) {
         return interaction.reply(ui.msg(ui.bloco(cfg.COR.neutro,
           ui.titulo('📋 NENHUMA FILA'),
@@ -89,7 +91,29 @@ module.exports = {
         ui.nota(`${ativas} ativa(s) de ${rows.length} · ${naFila} jogador(es) na fila agora`),
         ui.divisor(),
         ui.lista(linhas),
+        ui.divisor(),
+        ui.linhaBotoes(
+          ui.botao('fila:gerenciar', '🛠️ GERENCIAR FILAS', { estilo: ui.ESTILO.Primary }),
+        ),
       ), { efemero: true }));
+    }
+
+    if (sub === 'republicar' && interaction.options.getInteger('id') == null) {
+      await interaction.deferReply({ flags: ui.EFEMERO });
+      const r = await fila.republicarTodas(interaction.client, interaction.guildId);
+
+      if (!r.total) {
+        return interaction.editReply(ui.msg(ui.bloco(cfg.COR.neutro,
+          ui.titulo('📋 NENHUMA FILA ATIVA'),
+          ui.txt('Não há filas ativas pra republicar.'),
+        )));
+      }
+
+      return interaction.editReply(ui.msg(ui.bloco(r.falhas.length ? cfg.COR.aviso : cfg.COR.sucesso,
+        ui.titulo('✅ FILAS REPUBLICADAS'),
+        ui.txt(`${r.ok}/${r.total} republicada(s).`),
+        r.falhas.length ? ui.nota(`Falharam: ${r.falhas.map((f) => `#${f.id}`).join(', ')} — confira o console.`) : null,
+      )));
     }
 
     const id = interaction.options.getInteger('id');
@@ -99,21 +123,7 @@ module.exports = {
     }
 
     if (sub === 'remover') {
-      const devolvidos = fila.entradas(id);
-      for (const e of devolvidos) {
-        try {
-          wallet.unlock(e.user_id, q.valor);
-        } catch { /* trava ja resolvida */ }
-      }
-      db.prepare('DELETE FROM queue_entries WHERE queue_id = ?').run(id);
-      db.prepare('UPDATE queues SET ativo = 0 WHERE id = ?').run(id);
-
-      try {
-        const ch = await interaction.client.channels.fetch(q.channel_id);
-        const msg = await ch.messages.fetch(q.message_id);
-        await msg.delete();
-      } catch { /* mensagem ja apagada */ }
-
+      const devolvidos = await fila.desativar(interaction.client, q);
       return interaction.reply(ui.msg(ui.bloco(cfg.COR.aviso,
         ui.titulo('🚫 FILA DESATIVADA'),
         ui.divisor(),
@@ -125,9 +135,22 @@ module.exports = {
       ), { efemero: true }));
     }
 
+    if (sub === 'apagar') {
+      const devolvidos = await fila.apagarPermanente(interaction.client, q);
+      return interaction.reply(ui.msg(ui.bloco(cfg.COR.erro,
+        ui.titulo('🗑️ FILA APAGADA PRA SEMPRE'),
+        ui.divisor(),
+        ui.tabela([
+          ['Fila', `#${id} ${q.modalidade}`],
+          ['Jogadores estornados', String(devolvidos.length)],
+          ['Total devolvido', money.fmt(devolvidos.length * q.valor)],
+        ]),
+        ui.nota('Isso não pode ser desfeito — o registro saiu do banco de dados.'),
+      ), { efemero: true }));
+    }
+
     if (sub === 'republicar') {
-      const ch = await interaction.client.channels.fetch(q.channel_id);
-      await fila.publicarPainel(ch, q);
+      const ch = await fila.republicarUma(interaction.client, q);
       return interaction.reply(ui.msg(ui.bloco(cfg.COR.sucesso,
         ui.titulo('✅ PAINEL REPUBLICADO'),
         ui.txt(`Fila \`#${id}\` está de volta em ${ch}.`),
