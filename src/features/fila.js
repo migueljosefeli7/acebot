@@ -50,19 +50,19 @@ function dadosDaFila(q) {
 function painel(q, { bannerUrl = null } = {}) {
   const dados = dadosDaFila(q);
   const banner = bannerUrl || q.banner;
-  const cabecalho = [`## <:pt:1542011838487597076> ${q.modalidade}`,
+  const cabecalho = [`## ${q.modalidade}`,
     `-# Fila #${q.id} · a partida fecha com 1 jogador de cada lado no mesmo modo`];
+  const premio = q.valor * 2 - cfg.taxaPartida;
 
   return ui.bloco(cfg.COR.primaria,
     // Banner pequeno no canto (thumbnail), nao mais a imagem larga.
-    banner ? ui.comThumb(cabecalho, banner) : [ui.titulo(cabecalho[0].replace(/^##\s*/, '')), ui.nota(cabecalho[1].replace(/^-#\s*/, ''))],
+    banner ? ui.comThumb(cabecalho, banner) : [ui.titulo(q.modalidade), ui.nota(cabecalho[1].replace(/^-#\s*/, ''))],
     ui.divisor(),
-    // Valor apostado em destaque (mesmo tamanho do titulo) pra nao se confundir com o premio.
-    ui.titulo(`<:cifrao:1542021614600978452> ${money.fmt(q.valor)} por jogador`),
-    ui.txt(`<:cifrao:1542021614600978452> **Prêmio ao vencedor:** ${money.fmt(q.valor * 2 - cfg.taxaPartida)}`),
+    // Campo com rotulo em cima e valor em negrito embaixo — limpo, sem misturar tamanho de titulo.
+    ui.txt(`<:cifrao:1542021614600978452> Valor Partida\n**${money.fmt(q.valor)}**`),
+    ui.txt(`<:cifrao:1542021614600978452> Prêmio ao vencedor\n**${money.fmt(premio)}**`),
     ui.divisor(),
-    ui.secao('<:duas:1542028376452370482> Jogadores na fila'),
-    ui.txt(`${dados.infinito}\n\n${dados.normal}`),
+    ui.txt(`<:duas:1542028376452370482> Jogadores na fila\n${dados.infinito}\n\n${dados.normal}`),
     ui.divisor(),
     ui.linhaBotoes(
       ui.botao(`queue:join:${q.id}:INFINITO`, 'Gelo Infinito', { emoji: '<:infinito:1542027016768069702>' }),
