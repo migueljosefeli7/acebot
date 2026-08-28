@@ -567,9 +567,10 @@ async function iniciarPartida(interaction, matchId) {
     ui.divisor(),
     ui.txt(
       'Boa sorte!\n\n' +
-      '🏁 Quando acabar, **um jogador seleciona quem venceu no painel da partida** e o adversário confirma. ' +
+      '🏁 Quando acabar, **selecione quem venceu no menu abaixo** e o adversário confirma. ' +
       'Se houver qualquer problema, use **CHAMAR SUPORTE**.'
     ),
+    seletorVencedor(m),
   )));
 
   // Fica no ticket durante a partida como um SOS permanente para os jogadores.
@@ -597,9 +598,10 @@ async function iniciarPartidaAutomatico(client, matchId) {
       ui.divisor(),
       ui.txt(
         'Boa sorte!\n\n' +
-        '🏁 Quando acabar, **um jogador seleciona quem venceu no painel da partida** e o adversário confirma. ' +
+        '🏁 Quando acabar, **selecione quem venceu no menu abaixo** e o adversário confirma. ' +
         'Se houver qualquer problema, use **CHAMAR SUPORTE**.'
       ),
+      seletorVencedor(m),
     ))).catch(() => {});
 
     // Fica no ticket durante a partida como um SOS permanente para os jogadores.
