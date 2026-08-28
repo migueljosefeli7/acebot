@@ -45,8 +45,8 @@ function opcoesModo(modalidade) {
     });
   }
   return [
-    { valor: 'INFINITO', label: 'Gelo Infinito', emoji: '<:infinito:1542027016768069702>' },
-    { valor: 'NORMAL', label: 'Gelo Normal', emoji: '<:glo:1542027218341994618>' },
+    { valor: 'INFINITO', label: 'Gelo Infinito', emoji: emo.infinito },
+    { valor: 'NORMAL', label: 'Gelo Normal', emoji: emo.gelo },
   ];
 }
 
@@ -77,15 +77,15 @@ function linhasJogadores(q) {
 
 function painel(q, { bannerUrl = null } = {}) {
   const banner = bannerUrl || q.banner;
-  const campoModo = `<:pt:1542011838487597076> Modo de Jogo\n**${q.modalidade}**`;
-  const campoValor = `<:cifrao:1542021614600978452> Valor Partida\n**${money.fmt(q.valor)}**`;
+  const campoModo = `${emo.partida} Modo de Jogo\n**${q.modalidade}**`;
+  const campoValor = `${emo.cifrao} Valor Partida\n**${money.fmt(q.valor)}**`;
   const opcoes = opcoesModo(q.modalidade);
 
   return ui.bloco(cfg.COR.primaria,
     // Modo + valor juntos na mesma secao, ao lado da mesma thumbnail — sem vao entre os dois.
     banner ? ui.comThumb([campoModo, campoValor], banner) : [ui.txt(campoModo), ui.txt(campoValor)],
     ui.divisor(),
-    ui.txt(`<:duas:1542028376452370482> Jogadores na fila\n${linhasJogadores(q)}`),
+    ui.txt(`${emo.duas} Jogadores na fila\n${linhasJogadores(q)}`),
     ui.divisor(),
     ui.linhaBotoes(
       ...opcoes.map(({ valor, label, emoji }) => ui.botao(`queue:join:${q.id}:${valor}`, label, { emoji })),

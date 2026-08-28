@@ -4,17 +4,19 @@ const { COR } = require('../config');
 const money = require('./money');
 const banners = require('./banners');
 const fila = require('../features/fila');
+const emo = require('./emojis');
 
-// Emojis customizados da ACE, reaproveitados dos paineis para o log ter a mesma cara.
-// Nunca colocar esses emojis dentro de ui.tabela(): o bloco de codigo que ela usa
-// impede o Discord de renderizar emoji customizado, ele aparece como texto cru.
+// Emojis reaproveitados do registro central (lib/emojis.js) pra o log ter a
+// mesma cara dos paineis. Nunca colocar esses emojis dentro de ui.tabela():
+// o bloco de codigo que ela usa impede o Discord de renderizar emoji
+// customizado, ele aparece como texto cru.
 const E = {
-  deposito: '<:DEPOSITAR:1542022270740988086>',
-  saque: '<:SACAR:1542022254068764783>',
-  voucher: '<:ticekt:1542033006905139212>',
-  cifrao: '<:cifrao:1542021614600978452>',
-  logo: '<:logored:1542019888095301642>',
-  user: '<:user:1542021460342738944>',
+  deposito: emo.depositar,
+  saque: emo.sacar,
+  voucher: emo.ticket,
+  cifrao: emo.cifrao,
+  logo: emo.logo,
+  user: emo.user,
 };
 
 /** Anexa o banner do tipo de log (se o arquivo existir) e manda a mensagem. */
@@ -94,7 +96,7 @@ module.exports = {
       banners.obterLog('saque') ? ui.imagem(banners.obterLog('saque').url) : null,
       ui.titulo(`${E.saque} SAQUE REALIZADO`),
       ui.divisor(),
-      ui.txt(`<@${userId}> acabou de sacar **${money.fmt(amount)}**! <:cifrao:1542021614600978452>`),
+      ui.txt(`<@${userId}> acabou de sacar **${money.fmt(amount)}**! ${emo.cifrao}`),
       ui.nota(quando()),
     ));
   },

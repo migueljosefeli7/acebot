@@ -11,18 +11,19 @@ const notificar = require('../lib/notificar');
 const rollover = require('../lib/rollover');
 const termos = require('../lib/termos');
 const mp = require('../payments/mercadopago');
+const emo = require('../lib/emojis');
 
 /* ------------------------------------------------------------ PAINEL FIXO */
 
 const painel = () => ui.bloco(cfg.COR.primaria,
-  ui.titulo('<:logored:1542019888095301642> CARTEIRA · ACE'),
+  ui.titulo(`${emo.logo} CARTEIRA · ACE`),
   ui.nota('Seu saldo para entrar nas filas e apostar'),
   ui.divisor(),
   ui.txt(
-    '<:user:1542021460342738944> **MEU PERFIL** — saldo, valor em jogo, vitórias e extrato\n' +
-    '<:DEPOSITAR:1542022270740988086> **DEPOSITAR** — gera um PIX na hora, o saldo cai automático\n' +
-    '<:SACAR:1542022254068764783> **SACAR** — retire seu saldo quando quiser\n' +
-    '<:ticekt:1542033006905139212> **VOUCHER** — resgate um código de bônus da staff'
+    `${emo.user} **MEU PERFIL** — saldo, valor em jogo, vitórias e extrato\n` +
+    `${emo.depositar} **DEPOSITAR** — gera um PIX na hora, o saldo cai automático\n` +
+    `${emo.sacar} **SACAR** — retire seu saldo quando quiser\n` +
+    `${emo.ticket} **VOUCHER** — resgate um código de bônus da staff`
   ),
   ui.divisor(),
   ui.tabela([
@@ -31,10 +32,10 @@ const painel = () => ui.bloco(cfg.COR.primaria,
     ['Forma de pagamento', 'PIX'],
   ]),
   ui.linhaBotoes(
-    ui.botao('wallet:profile', 'MEU PERFIL', { emoji: '<:user:1542021460342738944>' }),
-    ui.botao('wallet:deposit', 'DEPOSITAR', { emoji: '<:DEPOSITAR:1542022270740988086>' }),
-    ui.botao('wallet:withdraw', 'SACAR', { emoji: '<:SACAR:1542022254068764783>' }),
-    ui.botao('wallet:voucher', 'VOUCHER', { emoji: '<:ticekt:1542033006905139212>' }),
+    ui.botao('wallet:profile', 'MEU PERFIL', { emoji: emo.user }),
+    ui.botao('wallet:deposit', 'DEPOSITAR', { emoji: emo.depositar }),
+    ui.botao('wallet:withdraw', 'SACAR', { emoji: emo.sacar }),
+    ui.botao('wallet:voucher', 'VOUCHER', { emoji: emo.ticket }),
   ),
   ui.nota('O valor em partida fica reservado até o resultado sair.'),
 );
