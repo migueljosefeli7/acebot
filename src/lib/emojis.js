@@ -22,6 +22,7 @@ module.exports = {
   gelo: '<:glo:1542027218341994618>',
   infinito: '<:infinito:1542027016768069702>',
   partida: '<:pt:1542011838487597076>',
+  sair: '<:sair:1542942267487289434>',
 
   // ---- PENDENTE: troque pelo emoji customizado real quando tiver o ID ----
   fogo: '🔥',        // win streak

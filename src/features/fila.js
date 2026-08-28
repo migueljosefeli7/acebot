@@ -89,7 +89,7 @@ function painel(q, { bannerUrl = null } = {}) {
     ui.divisor(),
     ui.linhaBotoes(
       ...opcoes.map(({ valor, label, emoji }) => ui.botao(`queue:join:${q.id}:${valor}`, label, { emoji })),
-      ui.botao(`queue:leave:${q.id}`, 'Sair', { estilo: ui.ESTILO.Danger }),
+      ui.botao(`queue:leave:${q.id}`, 'Sair', { estilo: ui.ESTILO.Danger, emoji: emo.sair }),
     ),
   );
 }
