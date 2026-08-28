@@ -37,21 +37,6 @@ async function entrarFila(interaction, queueId, gelo) {
   if (r.erro === 'FILA_INATIVA') return nao(interaction, 'Fila encerrada', 'Essa fila não está mais ativa.');
   if (r.erro === 'JA_NA_FILA') return nao(interaction, 'Você já está aqui', 'Já está nessa fila nesse modo. Clique em `Sair` para desistir.');
   if (r.erro === 'STREAMER_OFFLINE') return nao(interaction, 'Streamer não está disponível', 'Ele saiu da fila (ficou offline ou está em outra partida). Aguarde ele voltar.');
-  if (r.erro === 'EM_PARTIDA') {
-    const m = partida.get(r.matchId);
-    return interaction.reply(ui.msg(ui.bloco(cfg.COR.erro,
-      ui.titulo('❌ Partida em aberto'),
-      ui.txt(`Termine a partida #${r.matchId} antes de entrar em outra fila.`),
-      m?.thread_id ? ui.comBotao(
-        '**Volte ao ticket para concluir o resultado.**',
-        ui.botaoLink(
-          `https://discord.com/channels/${interaction.guildId}/${m.thread_id}`,
-          'ABRIR PARTIDA',
-          '⚔️',
-        ),
-      ) : null,
-    ), { efemero: true }));
-  }
   if (!r.ok) return nao(interaction, 'Não consegui te colocar na fila', 'Tente de novo em instantes.');
 
   // Sem pop-up nenhum ao entrar (com ou sem saldo) — o canal da fila mostra só

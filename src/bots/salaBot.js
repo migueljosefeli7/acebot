@@ -62,4 +62,6 @@ async function enviarComandoSala(channelId, m) {
   }
 }
 
-module.exports = { iniciar, enviarComandoSala, tipoDaSala };
+const getUserId = () => client?.user?.id || null;
+
+module.exports = { iniciar, enviarComandoSala, tipoDaSala, getUserId };

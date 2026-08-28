@@ -282,6 +282,10 @@ async function abrirTicket(client, matchId) {
   await thread.members.add(m.p1).catch(() => {});
   await thread.members.add(m.p2).catch(() => {});
 
+  // Sem isso a conta do sala-bot (selfbot) nao enxerga a thread privada e o +cs nunca chega.
+  const salaBotId = salaBot.getUserId();
+  if (salaBotId) await thread.members.add(salaBotId).catch(() => {});
+
   const atualizado = get(matchId);
   const msgPainel = await thread.send(mensagemPainel(atualizado, { anexarBanner: true }));
   // Guarda o id para as proximas edicoes nao precisarem varrer as fixadas.
@@ -516,6 +520,10 @@ async function confirmarRegras(interaction, matchId) {
     ),
   )));
 
+  // Garante que a conta do sala-bot é membro da thread mesmo em tickets abertos
+  // antes dessa integração existir (não fazia parte de abrirTicket ainda).
+  const salaBotId = salaBot.getUserId();
+  if (salaBotId) await interaction.channel.members.add(salaBotId).catch(() => {});
   salaBot.enviarComandoSala(interaction.channel.id, m).catch(() => {});
 
   await atualizarPainel(interaction.client, matchId);

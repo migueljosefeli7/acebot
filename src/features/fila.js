@@ -153,12 +153,6 @@ const entrarNaFila = db.transaction((queueId, userId, gelo) => {
     if (!streamerSentado) return { erro: 'STREAMER_OFFLINE' };
   }
 
-  const emPartida = db.prepare(
-    `SELECT id FROM matches WHERE (p1 = ? OR p2 = ?)
-     AND status NOT IN ('FINALIZADA', 'CANCELADA') LIMIT 1`
-  ).get(userId, userId);
-  if (emPartida) return { erro: 'EM_PARTIDA', matchId: emPartida.id };
-
   let filaAnterior = null;
   const jaNaFila = db.prepare('SELECT * FROM queue_entries WHERE user_id = ?').get(userId);
   if (jaNaFila) {
