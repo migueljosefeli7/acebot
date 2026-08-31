@@ -12,10 +12,13 @@ const onSugestao = require('./events/sugestao');
 const onCompletar = require('./events/completar');
 const onIaChat = require('./events/iaChat');
 const onSalaCriada = require('./events/salaCriada');
+const onGoPartida = require('./events/goPartida');
+const onPartidaFinalizadaExterna = require('./events/partidaFinalizadaExterna');
 const membros = require('./lib/membros');
 const ratelimit = require('./lib/ratelimit');
 const { iniciarWebhook } = require('./web/server');
 const salaBot = require('./bots/salaBot');
+const configPadrao = require('./lib/configPadrao');
 
 if (!cfg.token || !cfg.clientId) {
   console.error('❌ Faltou DISCORD_TOKEN ou CLIENT_ID no arquivo .env');
@@ -67,6 +70,11 @@ client.once(Events.ClientReady, async () => {
   console.log(`🤖 Online como ${client.user.tag}`);
   client.user.setActivity('apostas de Free Fire 🎮');
 
+  // Canais/cargos fixos do servidor — grava só o que ainda não está salvo no
+  // banco, então nunca mais precisa rodar /config depois de um restart.
+  const gravados = configPadrao.seed(cfg.guildId || configPadrao.GUILD_ID);
+  if (gravados) console.log(`⚙️  ${gravados} configuração(ões) padrão gravada(s) automaticamente.`);
+
   try {
     await registrarComandos();
   } catch (e) {
@@ -107,6 +115,8 @@ client.on(Events.MessageCreate, onSugestao);
 client.on(Events.MessageCreate, onCompletar);
 client.on(Events.MessageCreate, onIaChat);
 client.on(Events.MessageCreate, onSalaCriada);
+client.on(Events.MessageCreate, onGoPartida);
+client.on(Events.MessageCreate, onPartidaFinalizadaExterna);
 
 /* ------------------------------------------------- LIMPEZA DE PENDENCIAS */
 
@@ -141,6 +151,23 @@ setInterval(async () => {
     if (r.resolvidas) console.log(`⏱️ ${r.resolvidas} partida(s) resolvida(s) por abandono de confirmação.`);
   } catch (e) {
     console.error('[abandono] varredura falhou:', e.message);
+  }
+
+  // Sala criada mas ninguem digitou +go dentro do prazo: comeca sozinha.
+  try {
+    const resolvidas = await partida.resolverGoAutomatico(client);
+    if (resolvidas) console.log(`🕹️ ${resolvidas} partida(s) iniciada(s) automaticamente (prazo de +go vencido).`);
+  } catch (e) {
+    console.error('[go-automatico] varredura falhou:', e.message);
+  }
+
+  // Partida em andamento cujo prazo de liberar o resultado venceu, sem o bot
+  // externo confirmar antes com o embed de "Partida Finalizada!".
+  try {
+    const liberadas = await partida.resolverResultadoAutomatico(client);
+    if (liberadas) console.log(`🏁 ${liberadas} partida(s) com o resultado liberado automaticamente (prazo vencido).`);
+  } catch (e) {
+    console.error('[resultado-automatico] varredura falhou:', e.message);
   }
 
   // Ranking diario/semanal/mensal: cada chamada so posta de verdade quando a

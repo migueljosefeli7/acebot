@@ -9,7 +9,8 @@ module.exports = {
   nomeBot: process.env.BOT_NOME || 'ACE',
   token: process.env.DISCORD_TOKEN,
   clientId: process.env.CLIENT_ID,
-  guildId: process.env.GUILD_ID,
+  // Fallback fixo: se faltar no .env, o bot ainda sobe apontado pro servidor certo.
+  guildId: process.env.GUILD_ID || '1541905325895065671',
 
   // Bot criador de salas: loga com token de conta de usuario (selfbot) e manda
   // +cs 1/2/3 no ticket quando a partida entra em AGUARDANDO_SALA. Vazio = desligado.
@@ -32,6 +33,15 @@ module.exports = {
   pixExpiraMinutos: int(process.env.PIX_EXPIRA_MINUTOS, 30),
   // Prazo para quem entrou na fila sem saldo pagar a partida dentro do ticket.
   pagamentoMinutos: int(process.env.PAGAMENTO_PARTIDA_MINUTOS, 15),
+
+  // Depois que a sala externa e criada, quanto tempo esperar os dois digitarem
+  // "+go" antes do bot dar inicio automatico a partida.
+  goMinutos: int(process.env.GO_PARTIDA_MINUTOS, 3),
+
+  // Depois que a partida entra EM_ANDAMENTO, quanto tempo esperar antes de
+  // liberar o seletor de "quem venceu" — a nao ser que o bot externo confirme
+  // antes com o embed de "Partida Finalizada!".
+  resultadoLiberaSegundos: int(process.env.RESULTADO_LIBERA_SEGUNDOS, 280),
 
   // Rollover (PLD/FT): quanto do que entrou precisa ser jogado antes de sacar.
   rolloverPercentual: int(process.env.ROLLOVER_PERCENTUAL, 80),

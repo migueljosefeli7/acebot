@@ -12,7 +12,6 @@ const logs = require('../lib/logs');
 const gc = require('../lib/guildconfig');
 const notificar = require('../lib/notificar');
 const banners = require('../lib/banners');
-const fila = require('./fila');
 const salaBot = require('../bots/salaBot');
 
 const get = (id) => db.prepare('SELECT * FROM matches WHERE id = ?').get(id);
@@ -21,7 +20,7 @@ const setStatus = (id, status) => db.prepare('UPDATE matches SET status = ? WHER
 const oponente = (m, userId) => (m.p1 === userId ? m.p2 : m.p1);
 const ehJogador = (m, userId) => m.p1 === userId || m.p2 === userId;
 const premio = (m) => m.valor * 2 - m.taxa;
-const modo = (m) => fila.rotuloModo(m.gelo);
+const modo = (m) => (m.gelo === 'INFINITO' ? 'Gelo Infinito' : 'Gelo Normal');
 const LINK_REGRAS = 'https://discord.com/channels/1541905325895065671/1541922210028064798';
 
 const STATUS = {
@@ -29,6 +28,7 @@ const STATUS = {
   AGUARDANDO_REGRAS: { txt: '📝 AGUARDANDO COMBINAR REGRAS', cor: cfg.COR.aviso },
   REGRA_PROPOSTA: { txt: '📝 REGRA PROPOSTA · aguardando resposta', cor: cfg.COR.aviso },
   AGUARDANDO_SALA: { txt: '🎮 AGUARDANDO CRIAÇÃO DA SALA', cor: cfg.COR.primaria },
+  SALA_CRIADA: { txt: '🕹️ SALA CRIADA · aguardando os jogadores', cor: cfg.COR.primaria },
   EM_ANDAMENTO: { txt: '🔴 PARTIDA EM ANDAMENTO', cor: cfg.COR.primaria },
   AGUARDANDO_RECRIACAO: { txt: '🔄 RECRIANDO SALA · aguardando as duas taxas', cor: cfg.COR.aviso },
   REVISAO: { txt: '⚖️ EM REVISÃO · aguardando a staff decidir', cor: cfg.COR.erro },
@@ -50,6 +50,14 @@ const devendo = (m) => [
 ];
 
 const pagouTudo = (m) => !!m.pago_p1 && !!m.pago_p2;
+
+/**
+ * Libera o seletor de "quem venceu": ou a partida ja esta AGUARDANDO_RESULTADO
+ * (alguem ja escolheu), ou esta EM_ANDAMENTO e ou o bot externo confirmou o fim
+ * (pronto_pra_resultado) ou o prazo de cfg.resultadoLiberaSegundos ja passou.
+ */
+const podeEscolherResultado = (m) =>
+  m.status === 'AGUARDANDO_RESULTADO' || (m.status === 'EM_ANDAMENTO' && !!m.pronto_pra_resultado);
 
 const propostaRevanche = (id) => db.prepare(
   'SELECT * FROM revanche_propostas WHERE id = ?'
@@ -89,7 +97,7 @@ const placar = (m) =>
 
 /* ------------------------------------------------------------ PAINEL DO TICKET */
 
-function painel(m, { bannerUrl = null } = {}) {
+function painel(m, { bannerUrl = null, client = null } = {}) {
   const streak = require('./streak');
   const s = STATUS[m.status] || { txt: m.status, cor: cfg.COR.neutro };
 
@@ -98,7 +106,7 @@ function painel(m, { bannerUrl = null } = {}) {
   const tagP2 = streak.tagStreak(m.p2);
   const temStreak = !!(tagP1 || tagP2);
   const cor = temStreak && !['FINALIZADA', 'CANCELADA'].includes(m.status) ? streak.COR_STREAK : s.cor;
-  const confirmandoResultado = ['EM_ANDAMENTO', 'AGUARDANDO_RESULTADO'].includes(m.status);
+  const confirmandoResultado = podeEscolherResultado(m);
 
   return ui.bloco(cor,
     ui.titulo(`⚔️ PARTIDA #${m.id} · ${m.modalidade}`),
@@ -130,6 +138,17 @@ function painel(m, { bannerUrl = null } = {}) {
       `${m.recriar_p2 ? '✅' : '⏳'} <@${m.p2}> · ${m.recriar_p2 ? 'pago' : 'aguardando pagamento'}\n\n` +
       `Cada jogador paga **${money.fmt(taxaRecriacao())}**. A nova sala só é liberada quando os dois pagarem.`
     ) : null,
+    m.status === 'SALA_CRIADA' ? ui.secao('🕹️ Sala criada — prontos?') : null,
+    m.status === 'SALA_CRIADA' ? ui.txt(
+      'Quando os dois estiverem prontos pra começar, digitem **+go** aqui no chat.\n' +
+      `Se ninguém digitar, a partida começa sozinha em até ${cfg.goMinutos} minutos.\n\n` +
+      `${m.go_p1 ? '✅' : '⏳'} <@${m.p1}> · ${m.go_p1 ? 'pronto' : 'aguardando'}\n` +
+      `${m.go_p2 ? '✅' : '⏳'} <@${m.p2}> · ${m.go_p2 ? 'pronto' : 'aguardando'}`
+    ) : null,
+    m.status === 'EM_ANDAMENTO' && !confirmandoResultado ? ui.nota(
+      `🕹️ O resultado poderá ser selecionado assim que a sala confirmar o fim da partida, ` +
+      `ou em até ${cfg.resultadoLiberaSegundos}s.`
+    ) : null,
     confirmandoResultado ? ui.divisor() : null,
     confirmandoResultado ? ui.secao('🏁 QUEM VENCEU?') : null,
     confirmandoResultado ? ui.txt(
@@ -144,16 +163,16 @@ function painel(m, { bannerUrl = null } = {}) {
     ui.divisor(true),
     ui.secao(s.txt),
     m.winner_id ? ui.txt(`🥇 Vencedor: <@${m.winner_id}>`) : null,
-    ...botoes(m),
+    ...botoes(m, client),
     ui.nota('O valor de cada jogador está reservado até o resultado sair.'),
   );
 }
 
 /** Monta o painel e, quando pedido, anexa a arte correspondente à modalidade. */
-function mensagemPainel(m, { anexarBanner = false } = {}) {
+function mensagemPainel(m, { anexarBanner = false, client = null } = {}) {
   const banner = banners.obter(m.modalidade);
   return ui.msg(
-    painel(m, { bannerUrl: banner?.url }),
+    painel(m, { bannerUrl: banner?.url, client }),
     banner && anexarBanner
       ? { files: [{ attachment: banner.caminho, name: banner.nome }] }
       : {},
@@ -161,7 +180,25 @@ function mensagemPainel(m, { anexarBanner = false } = {}) {
 }
 
 /** Botões do painel, conforme a fase da partida. */
-function seletorVencedor(m) {
+/**
+ * Nome legivel do jogador, direto do cache de membros (sincrono, sem chamada
+ * de rede — ver src/lib/membros.js). Cai pro rotulo generico se o cache ainda
+ * nao tiver o membro ou o nome vier vazio.
+ */
+function nomeDoJogador(client, guildId, userId, generico) {
+  try {
+    const member = client?.guilds?.cache?.get(guildId)?.members?.cache?.get(userId);
+    const nome = member?.displayName || member?.user?.username;
+    return nome && nome.trim() ? nome.trim().slice(0, 90) : generico;
+  } catch {
+    return generico;
+  }
+}
+
+function seletorVencedor(m, client) {
+  const nome1 = nomeDoJogador(client, m.guild_id, m.p1, 'Jogador 1');
+  const nome2 = nomeDoJogador(client, m.guild_id, m.p2, 'Jogador 2');
+
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId(`match:winner:${m.id}`)
@@ -170,14 +207,14 @@ function seletorVencedor(m) {
       .setMaxValues(1)
       .addOptions(
         {
-          label: 'Jogador 1',
-          description: 'Selecionar o Jogador 1 como vencedor',
+          label: nome1,
+          description: `Selecionar ${nome1} como vencedor`.slice(0, 100),
           value: m.p1,
           emoji: '1️⃣',
         },
         {
-          label: 'Jogador 2',
-          description: 'Selecionar o Jogador 2 como vencedor',
+          label: nome2,
+          description: `Selecionar ${nome2} como vencedor`.slice(0, 100),
           value: m.p2,
           emoji: '2️⃣',
         },
@@ -185,7 +222,7 @@ function seletorVencedor(m) {
   );
 }
 
-function botoes(m) {
+function botoes(m, client) {
   const botaoRegras = () => ui.botaoLink(LINK_REGRAS, 'REGRAS DO SERVIDOR', '📜');
 
   if (m.status === 'FINALIZADA' || m.status === 'CANCELADA') {
@@ -202,10 +239,13 @@ function botoes(m) {
   if (m.status === 'AGUARDANDO_SALA') {
     linha1.push(ui.botao(`match:room:${m.id}`, 'SALA CRIADA · INICIAR', { estilo: ui.ESTILO.Success, emoji: '🎮' }));
   }
+  if (m.status === 'SALA_CRIADA') {
+    linha1.push(ui.botao(`match:room:${m.id}`, 'INICIAR AGORA', { estilo: ui.ESTILO.Success, emoji: '🎮' }));
+  }
   if (m.status === 'AGUARDANDO_RECRIACAO') {
     linha1.push(ui.botao(`match:recriar:${m.id}`, 'RECRIAR SALA', { estilo: ui.ESTILO.Primary, emoji: '🔄' }));
   }
-  const confirmandoResultado = ['EM_ANDAMENTO', 'AGUARDANDO_RESULTADO'].includes(m.status);
+  const confirmandoResultado = podeEscolherResultado(m);
 
   const linha2 = [];
   if (PODE_CANCELAR.includes(m.status)) {
@@ -219,7 +259,7 @@ function botoes(m) {
   // Linha sem botão é rejeitada pelo Discord.
   return [
     ...[linha1].filter((l) => l.length).map((l) => ui.linhaBotoes(...l)),
-    confirmandoResultado ? seletorVencedor(m) : null,
+    confirmandoResultado ? seletorVencedor(m, client) : null,
     ...[linha2].filter((l) => l.length).map((l) => ui.linhaBotoes(...l)),
   ].filter(Boolean);
 }
@@ -238,7 +278,7 @@ async function atualizarPainel(client, matchId) {
   try {
     const thread = await client.channels.fetch(m.thread_id);
     // O banner ja foi anexado quando o painel nasceu; reeditar nao precisa reenviar.
-    const carga = mensagemPainel(m, { anexarBanner: false });
+    const carga = mensagemPainel(m, { anexarBanner: false, client });
 
     if (m.painel_msg_id) {
       await thread.messages.edit(m.painel_msg_id, carga);
@@ -287,37 +327,46 @@ async function abrirTicket(client, matchId) {
   if (salaBotId) await thread.members.add(salaBotId).catch(() => {});
 
   const atualizado = get(matchId);
-  const msgPainel = await thread.send(mensagemPainel(atualizado, { anexarBanner: true }));
+  const msgPainel = await thread.send(mensagemPainel(atualizado, { anexarBanner: true, client }));
   // Guarda o id para as proximas edicoes nao precisarem varrer as fixadas.
   db.prepare('UPDATE matches SET painel_msg_id = ? WHERE id = ?').run(msgPainel.id, matchId);
   await msgPainel.pin().catch(() => {});
 
-  await thread.send(ui.msg(ui.bloco(cfg.COR.neutro,
-    ui.titulo('ℹ️ COMO FUNCIONA'),
-    ui.divisor(),
-    ui.txt(
-      '**1 ·** Alguém clica em `COMBINAR REGRAS` e escreve as regras do confronto.\n' +
-      '**2 ·** O adversário `CONFIRMA` ou usa `MUDAR REGRA` para propor outra.\n' +
-      '**3 ·** Regras aceitas → status vira **AGUARDANDO CRIAÇÃO DA SALA**.\n' +
-      '**4 ·** No fim, um jogador seleciona **quem venceu** no painel da partida.\n' +
-      '**5 ·** O adversário confirma o vencedor. Se discordar ou der problema, use `CHAMAR SUPORTE`.'
-    ),
-    ui.divisor(),
-    ui.txt(
-      '🆘 **CHAMAR SUPORTE** funciona como SOS em qualquer fase ativa da partida.\n' +
-      '🎥 Se o caso precisar de VAR, somente a staff poderá encaminhá-lo para análise.\n' +
-      '🔒 Depois das regras aceitas, **só a staff pode anular**.'
-    ),
-  )));
-
-  // Quem entrou na fila sem saldo paga essa partida aqui dentro.
-  if (atualizado.status === 'AGUARDANDO_PAGAMENTO') {
+  // Enquanto tem pagamento pendente a partida ainda nao esta confirmada — o
+  // "como combinar regras" so faz sentido (e so e mandado) depois que os dois
+  // pagarem, dentro de anunciarPagamento(). Aqui, so quando ja nasce paga.
+  if (atualizado.status !== 'AGUARDANDO_PAGAMENTO') {
+    await thread.send(ui.msg(comoFuncionaBloco()));
+  } else {
     await cobrancaNoTicket(thread, atualizado);
   }
 
   await avisarNoPv(client, get(matchId), thread);
   return thread;
 }
+
+/**
+ * Explicação do passo a passo — só faz sentido depois que a partida está
+ * confirmada (os dois pagaram). Mandado no abrirTicket quando já nasce paga,
+ * ou em anunciarPagamento() quando o segundo pagamento acaba de cair.
+ */
+const comoFuncionaBloco = () => ui.bloco(cfg.COR.neutro,
+  ui.titulo('ℹ️ COMO FUNCIONA'),
+  ui.divisor(),
+  ui.txt(
+    '**1 ·** Alguém clica em `COMBINAR REGRAS` e escreve as regras do confronto.\n' +
+    '**2 ·** O adversário `CONFIRMA` ou usa `MUDAR REGRA` para propor outra.\n' +
+    '**3 ·** Regras aceitas → status vira **AGUARDANDO CRIAÇÃO DA SALA**.\n' +
+    '**4 ·** No fim, um jogador seleciona **quem venceu** no painel da partida.\n' +
+    '**5 ·** O adversário confirma o vencedor. Se discordar ou der problema, use `CHAMAR SUPORTE`.'
+  ),
+  ui.divisor(),
+  ui.txt(
+    '🆘 **CHAMAR SUPORTE** funciona como SOS em qualquer fase ativa da partida.\n' +
+    '🎥 Se o caso precisar de VAR, somente a staff poderá encaminhá-lo para análise.\n' +
+    '🔒 Depois das regras aceitas, **só a staff pode anular**.'
+  ),
+);
 
 /** Aviso de cobrança dentro do ticket, marcando quem está devendo. */
 async function cobrancaNoTicket(thread, m) {
@@ -366,9 +415,9 @@ const marcarPago = db.transaction((matchId, userId, viaSaldo) => {
 
   const atual = get(matchId);
   if (pagouTudo(atual) && atual.status === 'AGUARDANDO_PAGAMENTO') {
-    // Revanche já reaproveita as regras combinadas e começa assim que os dois
-    // valores estiverem garantidos. Partida comum segue pelo acordo de regras.
-    setStatus(matchId, ehRevanche(matchId) ? 'EM_ANDAMENTO' : 'AGUARDANDO_REGRAS');
+    // Revanche já reaproveita as regras combinadas — pula direto pra criação da
+    // sala (mesma etapa que aciona o sala-bot). Partida comum ainda combina regras.
+    setStatus(matchId, ehRevanche(matchId) ? 'AGUARDANDO_SALA' : 'AGUARDANDO_REGRAS');
   }
   return { jaPago: false, match: get(matchId) };
 });
@@ -395,13 +444,24 @@ async function anunciarPagamento(client, r, userId, amount) {
       ui.divisor(),
       pagouTudo(m)
         ? ui.txt(revanche
-          ? 'Os dois valores estão garantidos. **A revanche começou!**'
+          ? 'Os dois valores estão garantidos. **Aguardando a criação da sala.**'
           : 'Os dois valores estão garantidos. **Podem combinar as regras.**')
         : ui.txt(`Ainda falta ${devendo(m).map((id) => `<@${id}>`).join(' e ')} pagar.`),
     )));
 
+    // Revanche pula regras — aciona o sala-bot na hora, igual confirmarRegras() faz
+    // pra partida comum. Sem isso o +cs nunca era enviado pra revanche paga depois.
     if (pagouTudo(m) && revanche) {
-      await thread.send(ui.msg(painelSuporte(m))).catch(() => {});
+      const salaBotId = salaBot.getUserId();
+      if (salaBotId) await thread.members.add(salaBotId).catch(() => {});
+      salaBot.enviarComandoSala(thread.id, m).catch(() => {});
+    }
+
+    // Partida comum: so agora, com os dois pagamentos confirmados, e que faz
+    // sentido explicar "como combinar regras" — antes disso nem era uma
+    // partida confirmada de verdade.
+    if (pagouTudo(m) && !revanche) {
+      await thread.send(ui.msg(comoFuncionaBloco())).catch(() => {});
     }
   }
 
@@ -431,9 +491,11 @@ async function avisarNoPv(client, m, thread) {
         ui.comBotao(
           m.status === 'AGUARDANDO_PAGAMENTO'
             ? '**Entre no ticket** para concluir o pagamento da partida.'
-            : revanche
-              ? '**Entre no ticket** — a revanche já começou.'
-              : '**Entre no ticket** para combinar as regras e começar.',
+            : m.status === 'AGUARDANDO_SALA'
+              ? '**Entre no ticket** para criar a sala e começar.'
+              : revanche
+                ? '**Entre no ticket** — a revanche já começou.'
+                : '**Entre no ticket** para combinar as regras e começar.',
           ui.botaoLink(link, 'IR PARA O TICKET', '⚔️'),
         ),
         ui.nota(`Partida #${m.id}`),
@@ -555,11 +617,19 @@ async function iniciarPartida(interaction, matchId) {
   if (!ehJogador(m, interaction.user.id) && !gc.hasRole(interaction.member, 'cargo_staff')) {
     return nao(interaction, 'Você não é jogador', 'Só os jogadores ou a staff podem iniciar.');
   }
-  if (m.status !== 'AGUARDANDO_SALA') {
+  // AGUARDANDO_SALA: ninguem clicou/detectou a sala ainda (fallback manual).
+  // SALA_CRIADA: a sala ja foi detectada e esta so esperando o +go — esse botao
+  // deixa pular a espera e comecar na hora.
+  if (!['AGUARDANDO_SALA', 'SALA_CRIADA'].includes(m.status)) {
     return nao(interaction, 'Fora de hora', 'A partida não está aguardando a criação da sala.');
   }
 
+  if (m.go_msg_id) {
+    await interaction.channel.messages.delete(m.go_msg_id).catch(() => {});
+  }
+
   setStatus(matchId, 'EM_ANDAMENTO');
+  db.prepare('UPDATE matches SET em_andamento_em = ? WHERE id = ?').run(Date.now(), matchId);
 
   await interaction.reply(ui.msg(ui.bloco(cfg.COR.primaria,
     ui.titulo('🔴 PARTIDA INICIADA'),
@@ -567,10 +637,9 @@ async function iniciarPartida(interaction, matchId) {
     ui.divisor(),
     ui.txt(
       'Boa sorte!\n\n' +
-      '🏁 Quando acabar, **selecione quem venceu no menu abaixo** e o adversário confirma. ' +
+      '🏁 Quando acabar, **um jogador seleciona quem venceu no painel da partida** e o adversário confirma. ' +
       'Se houver qualquer problema, use **CHAMAR SUPORTE**.'
     ),
-    seletorVencedor(m),
   )));
 
   // Fica no ticket durante a partida como um SOS permanente para os jogadores.
@@ -580,28 +649,85 @@ async function iniciarPartida(interaction, matchId) {
 }
 
 /**
- * Mesma transição de iniciarPartida, mas disparada sozinha quando o bot externo
- * de criação de sala confirma a sala no ticket — sem precisar de um jogador clicar
- * em SALA CRIADA · INICIAR. Ver src/events/salaCriada.js.
+ * Bot externo de criação de sala confirma "a sala foi criada" no ticket —
+ * a partida NÃO começa ainda: entra em SALA_CRIADA e espera os dois jogadores
+ * digitarem "+go" (ou o prazo de cfg.goMinutos vencer). Ver src/events/salaCriada.js.
  */
-async function iniciarPartidaAutomatico(client, matchId) {
+async function marcarSalaCriada(client, matchId) {
   const m = get(matchId);
   if (!m || m.status !== 'AGUARDANDO_SALA') return false;
 
+  setStatus(matchId, 'SALA_CRIADA');
+  db.prepare('UPDATE matches SET sala_pronta_em = ? WHERE id = ?').run(Date.now(), matchId);
+
+  const thread = m.thread_id ? await client.channels.fetch(m.thread_id).catch(() => null) : null;
+  if (thread) {
+    const msg = await thread.send(ui.msg(ui.bloco(cfg.COR.primaria,
+      ui.titulo('🕹️ SALA CRIADA'),
+      ui.nota(`Partida #${matchId}`),
+      ui.divisor(),
+      ui.txt(
+        'Quando os dois estiverem prontos, digitem **+go** aqui no chat.\n' +
+        `Se ninguém digitar, a partida começa sozinha em até ${cfg.goMinutos} minutos.`
+      ),
+    ))).catch(() => null);
+    if (msg) db.prepare('UPDATE matches SET go_msg_id = ? WHERE id = ?').run(msg.id, matchId);
+  }
+
+  await atualizarPainel(client, matchId);
+  return true;
+}
+
+/**
+ * Um jogador digitou "+go". Quando os dois confirmarem, a partida começa de
+ * verdade (apagando o embed de espera). Ver src/events/goPartida.js.
+ */
+async function registrarGo(client, matchId, userId) {
+  const m = get(matchId);
+  if (!m || m.status !== 'SALA_CRIADA' || !ehJogador(m, userId)) return false;
+
+  const campo = m.p1 === userId ? 'go_p1' : 'go_p2';
+  if (m[campo]) return false; // ja confirmou, nao repete
+
+  db.prepare(`UPDATE matches SET ${campo} = 1 WHERE id = ?`).run(matchId);
+  const atual = get(matchId);
+
+  if (atual.go_p1 && atual.go_p2) {
+    await iniciarPartidaAutomatico(client, matchId);
+  } else {
+    await atualizarPainel(client, matchId);
+  }
+  return true;
+}
+
+/**
+ * Mesma transição de iniciarPartida, mas disparada sozinha — tanto pelo +go
+ * dos dois jogadores quanto pelo timeout de cfg.goMinutos (ver o sweep em
+ * index.js). Aceita a partida vindo de AGUARDANDO_SALA (sem passar por
+ * SALA_CRIADA, ex: deteccao falhou) ou de SALA_CRIADA (fluxo normal).
+ */
+async function iniciarPartidaAutomatico(client, matchId) {
+  const m = get(matchId);
+  if (!m || !['AGUARDANDO_SALA', 'SALA_CRIADA'].includes(m.status)) return false;
+
   setStatus(matchId, 'EM_ANDAMENTO');
+  db.prepare('UPDATE matches SET em_andamento_em = ? WHERE id = ?').run(Date.now(), matchId);
 
   const canal = m.thread_id ? await client.channels.fetch(m.thread_id).catch(() => null) : null;
   if (canal) {
+    if (m.go_msg_id) {
+      await canal.messages.delete(m.go_msg_id).catch(() => {});
+    }
+
     await canal.send(ui.msg(ui.bloco(cfg.COR.primaria,
       ui.titulo('🔴 PARTIDA INICIADA'),
       ui.nota(`Partida #${matchId} · sala confirmada automaticamente`),
       ui.divisor(),
       ui.txt(
         'Boa sorte!\n\n' +
-        '🏁 Quando acabar, **selecione quem venceu no menu abaixo** e o adversário confirma. ' +
+        '🏁 Quando acabar, **um jogador seleciona quem venceu no painel da partida** e o adversário confirma. ' +
         'Se houver qualquer problema, use **CHAMAR SUPORTE**.'
       ),
-      seletorVencedor(m),
     ))).catch(() => {});
 
     // Fica no ticket durante a partida como um SOS permanente para os jogadores.
@@ -610,6 +736,56 @@ async function iniciarPartidaAutomatico(client, matchId) {
 
   await atualizarPainel(client, matchId);
   return true;
+}
+
+/** Partidas em SALA_CRIADA cujo prazo de +go venceu — força o início sozinho. */
+async function resolverGoAutomatico(client) {
+  const vencidas = db.prepare(
+    `SELECT id FROM matches WHERE status = 'SALA_CRIADA'
+       AND sala_pronta_em IS NOT NULL AND sala_pronta_em + ? < ?`
+  ).all(cfg.goMinutos * 60 * 1000, Date.now());
+
+  let resolvidas = 0;
+  for (const { id } of vencidas) {
+    try {
+      if (await iniciarPartidaAutomatico(client, id)) resolvidas++;
+    } catch (e) {
+      console.error(`[partida #${id}] falha ao dar +go automático:`, e.message);
+    }
+  }
+  return resolvidas;
+}
+
+/**
+ * Libera o seletor de "quem venceu" antes do prazo — chamado quando o bot
+ * externo confirma o fim da partida (embed "Partida Finalizada!", ver
+ * events/partidaFinalizadaExterna.js).
+ */
+async function liberarResultado(client, matchId) {
+  const m = get(matchId);
+  if (!m || m.status !== 'EM_ANDAMENTO' || m.pronto_pra_resultado) return false;
+
+  db.prepare('UPDATE matches SET pronto_pra_resultado = 1 WHERE id = ?').run(matchId);
+  await atualizarPainel(client, matchId);
+  return true;
+}
+
+/** Partidas EM_ANDAMENTO cujo prazo de cfg.resultadoLiberaSegundos venceu sem o bot externo confirmar. */
+async function resolverResultadoAutomatico(client) {
+  const vencidas = db.prepare(
+    `SELECT id FROM matches WHERE status = 'EM_ANDAMENTO' AND pronto_pra_resultado = 0
+       AND em_andamento_em IS NOT NULL AND em_andamento_em + ? < ?`
+  ).all(cfg.resultadoLiberaSegundos * 1000, Date.now());
+
+  let resolvidas = 0;
+  for (const { id } of vencidas) {
+    try {
+      if (await liberarResultado(client, id)) resolvidas++;
+    } catch (e) {
+      console.error(`[partida #${id}] falha ao liberar resultado automaticamente:`, e.message);
+    }
+  }
+  return resolvidas;
 }
 
 /* --------------------------------------------------------- QUEBRA DE REGRA */
@@ -1236,7 +1412,7 @@ const criarPartidaDeRevanche = db.transaction((proposalId, userId) => {
   ).run(
     p.guild_id, anterior.modalidade, anterior.gelo, p.amount, cfg.taxaPartida,
     p.proposer_id, p.opponent_id, p.thread_id,
-    tudoPago ? 'EM_ANDAMENTO' : 'AGUARDANDO_PAGAMENTO',
+    tudoPago ? 'AGUARDANDO_SALA' : 'AGUARDANDO_PAGAMENTO',
     anterior.regras, anterior.regras_autor,
     pagos[p.proposer_id] ? 1 : 0, pagos[p.opponent_id] ? 1 : 0, Date.now(),
   );
@@ -1265,21 +1441,27 @@ async function aceitarRevanche(interaction, proposalId) {
     ui.txt(`<@${interaction.user.id}> aceitou. A revanche virou a **partida #${m.id}** neste canal.`),
   )));
 
-  const msgPainel = await interaction.channel.send(mensagemPainel(m, { anexarBanner: true }));
+  const msgPainel = await interaction.channel.send(mensagemPainel(m, { anexarBanner: true, client: interaction.client }));
   db.prepare('UPDATE matches SET painel_msg_id = ? WHERE id = ?').run(msgPainel.id, m.id);
   await msgPainel.pin().catch(() => {});
 
   if (pagouTudo(m)) {
+    // Revanche reaproveita as regras — pula direto pra criação da sala, igual
+    // confirmarRegras() faz na partida comum. Antes isso ia pra EM_ANDAMENTO
+    // sem nunca acionar o sala-bot nem mostrar "quem venceu" só depois da sala.
     await interaction.channel.send(ui.msg(ui.bloco(cfg.COR.primaria,
-      ui.titulo('🔴 REVANCHE INICIADA'),
+      ui.titulo('🎮 AGUARDANDO CRIAÇÃO DA SALA'),
       ui.nota(`Partida #${m.id} · ${m.modalidade} · ${modo(m)}`),
       ui.divisor(),
       ui.txt(
-        `<@${m.p1}> e <@${m.p2}>, os dois valores foram reservados. **Podem começar!**\n\n` +
-        'No fim, um jogador seleciona o vencedor e o adversário confirma.'
+        `<@${m.p1}> e <@${m.p2}>, os dois valores foram reservados.\n\n` +
+        'Criem a sala, mandem o código aqui e cliquem em `SALA CRIADA · INICIAR` ao começar.'
       ),
     )));
-    await interaction.channel.send(ui.msg(painelSuporte(m))).catch(() => {});
+
+    const salaBotId = salaBot.getUserId();
+    if (salaBotId) await interaction.channel.members.add(salaBotId).catch(() => {});
+    salaBot.enviarComandoSala(interaction.channel.id, m).catch(() => {});
   } else {
     const faltando = devendo(m);
     await interaction.channel.send(ui.msg(ui.bloco(cfg.COR.aviso,
@@ -1869,7 +2051,7 @@ async function finalizarPartida(client, matchId, vencedorId, motivo) {
 
   // Dá tempo para os jogadores combinarem uma revanche. Uma proposta pendente
   // ou uma nova partida ativa impede o fechamento automático deste canal.
-  if (thread) await fecharTicket(thread, matchId, 300);
+  if (thread) await fecharTicket(thread, matchId, 60);
 }
 
 /**
@@ -1958,7 +2140,7 @@ async function fecharTicket(thread, matchId, segundos) {
         // evitando que um botão abandonado mantenha o canal aberto para sempre.
         if (propostaPendente.created_at > Date.now() - 5 * 60_000) {
           console.log(`[partida #${matchId}] aguardando proposta de revanche #${propostaPendente.id}`);
-          await fecharTicket(thread, matchId, 300);
+          await fecharTicket(thread, matchId, 60);
           return;
         }
         db.prepare(
@@ -2112,6 +2294,7 @@ module.exports = {
   devendo, pagouTudo, cobrancaNoTicket, registrarPagamento, registrarPagamentoPorSaldo,
   botoesVeredito, fecharTicket, abrirTicket, avisarNoPv, modalRegras, proporRegras,
   confirmarRegras, recusarRegras, iniciarPartida, iniciarPartidaAutomatico,
+  marcarSalaCriada, registrarGo, resolverGoAutomatico, liberarResultado, resolverResultadoAutomatico,
   vencedorPelosClaims, recuperarResultadosPendentes, resolverAbandonos,
   selecionarVencedor, confirmarVencedor, cancelarEscolhaVencedor, chamarSuporte, chamarVarStaff,
   modalRevanche, abrirModalRevanche, proporRevanche, aceitarRevanche, recusarRevanche,

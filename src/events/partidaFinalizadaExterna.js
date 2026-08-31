@@ -1,6 +1,6 @@
 const partida = require('../features/partida');
 
-const REGEX_SALA_CRIADA = /a sala foi criada/i;
+const REGEX_FINALIZADA = /partida finalizada/i;
 
 /** Junta texto de content, embeds e components (inclusive Components V2) numa string só. */
 function textoDaMensagem(message) {
@@ -23,23 +23,21 @@ function textoDaMensagem(message) {
 }
 
 /**
- * Detecta a mensagem que o bot externo de criação de sala posta no ticket
- * ("A Sala foi criada!", disparada pelo +cs 1/2/3 do sala-bot) e leva a
- * partida para SALA_CRIADA — ainda NÃO é EM_ANDAMENTO: os jogadores digitam
- * "+go" quando estiverem prontos (ver events/goPartida.js), ou o bot dá
- * início sozinho depois de cfg.goMinutos (ver o sweep em index.js).
+ * Detecta a mensagem que o bot externo de sala posta quando a partida acaba
+ * ("Partida Finalizada!", com Time 1/Time 2 e o vencedor) e libera o seletor
+ * de "quem venceu" na hora, sem precisar esperar cfg.resultadoLiberaSegundos.
  */
-module.exports = async function onSalaCriada(message) {
+module.exports = async function onPartidaFinalizadaExterna(message) {
   try {
     if (!message.author?.bot || !message.guildId) return;
 
     const m = partida.getByThread(message.channel.id);
-    if (!m || m.status !== 'AGUARDANDO_SALA') return;
+    if (!m || m.status !== 'EM_ANDAMENTO' || m.pronto_pra_resultado) return;
 
-    if (!REGEX_SALA_CRIADA.test(textoDaMensagem(message))) return;
+    if (!REGEX_FINALIZADA.test(textoDaMensagem(message))) return;
 
-    await partida.marcarSalaCriada(message.client, m.id);
+    await partida.liberarResultado(message.client, m.id);
   } catch (e) {
-    console.error('[sala-criada]', e.message);
+    console.error('[partida-finalizada-externa]', e.message);
   }
 };

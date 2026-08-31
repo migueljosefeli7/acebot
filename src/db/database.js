@@ -49,6 +49,12 @@ const COLUNAS_NOVAS = [
   ['queues', 'limite_partidas', 'INTEGER'],
   ['queues', 'partidas_jogadas', 'INTEGER NOT NULL DEFAULT 0'],
   ['queues', 'regras', 'TEXT'],
+  ['matches', 'sala_pronta_em', 'INTEGER'],
+  ['matches', 'go_p1', 'INTEGER NOT NULL DEFAULT 0'],
+  ['matches', 'go_p2', 'INTEGER NOT NULL DEFAULT 0'],
+  ['matches', 'go_msg_id', 'TEXT'],
+  ['matches', 'em_andamento_em', 'INTEGER'],
+  ['matches', 'pronto_pra_resultado', 'INTEGER NOT NULL DEFAULT 0'],
 ];
 
 for (const [tabela, coluna, tipo] of COLUNAS_NOVAS) {
