@@ -223,18 +223,15 @@ function seletorVencedor(m, client) {
 }
 
 function botoes(m, client) {
-  const botaoRegras = () => ui.botaoLink(LINK_REGRAS, 'REGRAS DO SERVIDOR', '📜');
-
+  // COMBINAR REGRAS e REGRAS DO SERVIDOR vivem so no embed "COMO FUNCIONA"
+  // (ver comoFuncionaBloco), nao duplicam mais aqui no painel principal.
   if (m.status === 'FINALIZADA' || m.status === 'CANCELADA') {
-    return [ui.linhaBotoes(botaoRegras())];
+    return [];
   }
 
   const linha1 = [];
   if (m.status === 'AGUARDANDO_PAGAMENTO') {
     linha1.push(ui.botao(`match:pay:${m.id}`, 'PAGAR MINHA PARTIDA', { estilo: ui.ESTILO.Success, emoji: '💳' }));
-  }
-  if (m.status === 'AGUARDANDO_REGRAS') {
-    linha1.push(ui.botao(`match:rules:${m.id}`, 'COMBINAR REGRAS', { estilo: ui.ESTILO.Primary, emoji: '📜' }));
   }
   if (m.status === 'AGUARDANDO_SALA') {
     linha1.push(ui.botao(`match:room:${m.id}`, 'SALA CRIADA · INICIAR', { estilo: ui.ESTILO.Success, emoji: '🎮' }));
@@ -254,7 +251,6 @@ function botoes(m, client) {
   if (!['DISPUTA', 'SS_SOLICITADO', 'REVISAO'].includes(m.status)) {
     linha2.push(ui.botao(`match:support:${m.id}`, 'CHAMAR SUPORTE', { estilo: ui.ESTILO.Danger, emoji: '🆘' }));
   }
-  linha2.push(botaoRegras());
 
   // Linha sem botão é rejeitada pelo Discord.
   return [
@@ -336,7 +332,7 @@ async function abrirTicket(client, matchId) {
   // "como combinar regras" so faz sentido (e so e mandado) depois que os dois
   // pagarem, dentro de anunciarPagamento(). Aqui, so quando ja nasce paga.
   if (atualizado.status !== 'AGUARDANDO_PAGAMENTO') {
-    await thread.send(ui.msg(comoFuncionaBloco()));
+    await thread.send(ui.msg(comoFuncionaBloco(atualizado)));
   } else {
     await cobrancaNoTicket(thread, atualizado);
   }
@@ -350,7 +346,7 @@ async function abrirTicket(client, matchId) {
  * confirmada (os dois pagaram). Mandado no abrirTicket quando já nasce paga,
  * ou em anunciarPagamento() quando o segundo pagamento acaba de cair.
  */
-const comoFuncionaBloco = () => ui.bloco(cfg.COR.neutro,
+const comoFuncionaBloco = (m) => ui.bloco(cfg.COR.neutro,
   ui.titulo('ℹ️ COMO FUNCIONA'),
   ui.divisor(),
   ui.txt(
@@ -365,6 +361,11 @@ const comoFuncionaBloco = () => ui.bloco(cfg.COR.neutro,
     '🆘 **CHAMAR SUPORTE** funciona como SOS em qualquer fase ativa da partida.\n' +
     '🎥 Se o caso precisar de VAR, somente a staff poderá encaminhá-lo para análise.\n' +
     '🔒 Depois das regras aceitas, **só a staff pode anular**.'
+  ),
+  ui.divisor(),
+  ui.linhaBotoes(
+    ui.botao(`match:rules:${m.id}`, 'COMBINAR REGRAS', { estilo: ui.ESTILO.Primary, emoji: '📜' }),
+    ui.botaoLink(LINK_REGRAS, 'REGRAS DO SERVIDOR', '📜'),
   ),
 );
 
@@ -461,7 +462,7 @@ async function anunciarPagamento(client, r, userId, amount) {
     // sentido explicar "como combinar regras" — antes disso nem era uma
     // partida confirmada de verdade.
     if (pagouTudo(m) && !revanche) {
-      await thread.send(ui.msg(comoFuncionaBloco())).catch(() => {});
+      await thread.send(ui.msg(comoFuncionaBloco(m))).catch(() => {});
     }
   }
 
@@ -794,7 +795,7 @@ async function resolverResultadoAutomatico(client) {
 const taxaRecriacao = () => Math.ceil(cfg.taxaPartida / 2);
 
 /** Bloco SOS fixo que fica no ticket durante a partida. */
-const painelSuporte = (m) => ui.bloco(cfg.COR.erro,
+const painelSuporte = (m) => ui.bloco(cfg.COR.primaria,
   ui.titulo('🆘 PRECISA DE AJUDA?'),
   ui.nota(`Partida #${m.id}`),
   ui.divisor(),

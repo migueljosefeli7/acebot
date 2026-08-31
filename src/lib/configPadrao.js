@@ -10,7 +10,7 @@ const GUILD_ID = '1541905325895065671';
 
 const DEFAULTS = {
   // ---- canais principais ----
-  canal_tickets: '1541922401443520532',
+  canal_tickets: '1541946629102370937',
   canal_depositos: '1541934174015987802',
   canal_saques_staff: '1544028794413650081',
   canal_saque_publico: '1541934331944108103',

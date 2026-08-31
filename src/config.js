@@ -41,7 +41,7 @@ module.exports = {
   // Depois que a partida entra EM_ANDAMENTO, quanto tempo esperar antes de
   // liberar o seletor de "quem venceu" — a nao ser que o bot externo confirme
   // antes com o embed de "Partida Finalizada!".
-  resultadoLiberaSegundos: int(process.env.RESULTADO_LIBERA_SEGUNDOS, 280),
+  resultadoLiberaSegundos: int(process.env.RESULTADO_LIBERA_SEGUNDOS, 260),
 
   // Rollover (PLD/FT): quanto do que entrou precisa ser jogado antes de sacar.
   rolloverPercentual: int(process.env.ROLLOVER_PERCENTUAL, 80),
