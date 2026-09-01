@@ -4,13 +4,14 @@ const ui = require('./ui');
 const money = require('./money');
 
 /**
- * Rollover (PLD/FT) — exigencia anti-lavagem.
+ * Rollover — só se aplica a saldo de VOUCHER/BÔNUS.
  *
- * Sem isso, alguem deposita R$100, nao joga nada e saca R$100: o bot vira
- * lavanderia. E um voucher de bonus viraria dinheiro sacavel de graca.
+ * Sem isso, um voucher de bônus viraria dinheiro sacável de graça na hora.
+ * Depósito com dinheiro real do próprio jogador NÃO exige rollover — pode
+ * ser sacado a qualquer momento.
  *
  * A conta e sempre feita a partir do ULTIMO SAQUE PAGO. Tudo e derivado das
- * tabelas de origem (deposits / vouchers / matches) em vez de contadores
+ * tabelas de origem (vouchers / matches) em vez de contadores
  * paralelos — contador desincroniza, fonte da verdade nao.
  *
  * Sao tres exigencias simultaneas:
@@ -25,19 +26,19 @@ const ultimoSaque = (userId) => db.prepare(
   "SELECT COALESCE(MAX(resolved_at), 0) t FROM withdrawals WHERE user_id = ? AND status = 'PAGO'"
 ).get(userId).t;
 
-/** Entradas (deposito + bonus) desde o ultimo saque, uma a uma. */
+/**
+ * Entradas que exigem rollover, desde o ultimo saque.
+ *
+ * Só bônus de voucher entram aqui — depósito com dinheiro real do próprio
+ * jogador pode ser sacado a qualquer momento, sem girar nada. Só saldo
+ * ganho de graça (voucher) precisa provar que foi jogado antes de virar saque.
+ */
 function entradas(userId, desde) {
-  const depositos = db.prepare(
-    `SELECT id, amount, paid_at AS quando, 'DEPOSITO' AS origem
-     FROM deposits WHERE user_id = ? AND status = 'PAGO' AND paid_at > ?`
-  ).all(userId, desde);
-
-  const bonus = db.prepare(
+  return db.prepare(
     `SELECT vu.code AS id, vu.amount, vu.used_at AS quando, 'BONUS' AS origem
-     FROM voucher_uses vu WHERE vu.user_id = ? AND vu.used_at > ?`
+     FROM voucher_uses vu WHERE vu.user_id = ? AND vu.used_at > ?
+     ORDER BY vu.used_at ASC`
   ).all(userId, desde);
-
-  return [...depositos, ...bonus].sort((a, b) => a.quando - b.quando);
 }
 
 /** Partidas finalizadas em que o jogador entrou desde o ultimo saque. */
@@ -117,7 +118,7 @@ function painel(userId) {
 
   return ui.bloco(s.liberado ? cfg.COR.sucesso : cfg.COR.aviso,
     ui.titulo(s.liberado ? '🔓 ROLLOVER CUMPRIDO' : '🔒 ROLLOVER EM ANDAMENTO'),
-    ui.nota(`Para sacar, você precisa girar ${cfg.rolloverPercentual}% do que entrou desde o último saque em partidas válidas`),
+    ui.nota(`Você recebeu bônus de voucher — precisa girar ${cfg.rolloverPercentual}% desse valor em partidas válidas antes de sacar`),
     ui.divisor(),
     ui.secao('Progresso'),
     ui.txt(`\`${barra(s.percentual)}\` **${s.percentual}%**`),
@@ -137,7 +138,7 @@ function painel(userId) {
     pendentes.length ? ui.txt(linhasPendentes.join('\n')) : null,
     ui.divisor(),
     ui.nota(
-      'Rollover (PLD/FT): exige girar parte do depósito em partidas válidas antes do saque — medida anti-lavagem'
+      'Rollover: só se aplica a saldo recebido de voucher/bônus — depósito com dinheiro real pode ser sacado direto.'
     ),
   );
 }
