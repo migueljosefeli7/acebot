@@ -12,6 +12,7 @@ const logs = require('../lib/logs');
 const gc = require('../lib/guildconfig');
 const notificar = require('../lib/notificar');
 const banners = require('../lib/banners');
+const vencedorBanner = require('../lib/vencedorBanner');
 const salaBot = require('../bots/salaBot');
 const fila = require('./fila');
 
@@ -2069,6 +2070,11 @@ async function finalizarPartida(client, matchId, vencedorId, motivo) {
     ), bannerFinalizada ? { files: [{ attachment: bannerFinalizada.caminho, name: bannerFinalizada.nome }] } : {}));
   }
 
+  // Banner dinâmico do vencedor (foto + nome + prêmio + data): posta no ticket
+  // e manda por DM convidando a postar nas redes. Nunca pode derrubar a
+  // finalização — já mexemos com dinheiro, um erro aqui é só cosmético.
+  await enviarBannerVencedor(client, m, vencedorId, thread);
+
   // Pontos de ranqueada: vencedor sobe, perdedor desce (nunca abaixo de zero).
   await pontuarPartida(client, m, vencedorId, perdedorId, thread, motivo);
 
@@ -2089,6 +2095,50 @@ async function finalizarPartida(client, matchId, vencedorId, motivo) {
   // Dá tempo para os jogadores combinarem uma revanche. Uma proposta pendente
   // ou uma nova partida ativa impede o fechamento automático deste canal.
   if (thread) await fecharTicket(thread, matchId, 60);
+}
+
+/**
+ * Gera o banner dinâmico do vencedor (foto do Discord + nome + prêmio + data),
+ * posta no ticket e manda por DM convidando a postar nas redes. Cosmético —
+ * qualquer erro (avatar não carregou, DM fechada) some no log e não afeta a partida.
+ */
+async function enviarBannerVencedor(client, m, vencedorId, thread) {
+  try {
+    const user = await client.users.fetch(vencedorId).catch(() => null);
+    const nome = nomeDoJogador(client, m.guild_id, vencedorId, user?.username || 'Vencedor');
+    const avatarUrl = user
+      ? user.displayAvatarURL({ extension: 'png', size: 512 })
+      : 'https://cdn.discordapp.com/embed/avatars/1.png';
+
+    const agora = new Date();
+    const dataTexto = `${String(agora.getDate()).padStart(2, '0')}/` +
+      `${String(agora.getMonth() + 1).padStart(2, '0')}/${agora.getFullYear()}`;
+
+    const buffer = await vencedorBanner.gerar({
+      avatarUrl,
+      nome,
+      valorTexto: money.fmt(premio(m)),
+      dataTexto,
+    });
+
+    const arquivo = { attachment: buffer, name: `vencedor-${m.id}.png` };
+
+    if (thread) {
+      await thread.send({ files: [arquivo] }).catch(() => {});
+    }
+
+    if (user) {
+      await user.send({
+        content:
+          '🏆 **Sua vitória virou arte!**\n' +
+          'Posta esse banner nos stories e marca a gente — bora mostrar pra todo mundo quem tá dominando o Free Fire! 🔥\n\n' +
+          '📸 Instagram: **@orgace**',
+        files: [arquivo],
+      }).catch(() => {});
+    }
+  } catch (e) {
+    console.error(`[partida #${m.id}] falha ao gerar/enviar banner do vencedor:`, e.message);
+  }
 }
 
 /**
