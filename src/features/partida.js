@@ -352,9 +352,9 @@ const comoFuncionaBloco = (m) => ui.bloco(cfg.COR.neutro,
   ui.txt(
     '**1 ·** Alguém clica em `COMBINAR REGRAS` e escreve as regras do confronto.\n' +
     '**2 ·** O adversário `CONFIRMA` ou usa `MUDAR REGRA` para propor outra.\n' +
-    '**3 ·** Regras aceitas → status vira **AGUARDANDO CRIAÇÃO DA SALA**.\n' +
-    '**4 ·** No fim, um jogador seleciona **quem venceu** no painel da partida.\n' +
-    '**5 ·** O adversário confirma o vencedor. Se discordar ou der problema, use `CHAMAR SUPORTE`.'
+    '**3 ·** Regras aceitas → **a sala é criada automaticamente**, sem vocês precisarem fazer nada.\n' +
+    `**4 ·** Com a sala criada, digitem \`+go\` quando estiverem prontos para começar (ou a partida inicia sozinha em até ${cfg.goMinutos} minutos).\n` +
+    '**5 ·** No fim, um jogador seleciona **quem venceu** no painel da partida e o adversário confirma. Se discordar ou der problema, use `CHAMAR SUPORTE`.'
   ),
   ui.divisor(),
   ui.txt(
