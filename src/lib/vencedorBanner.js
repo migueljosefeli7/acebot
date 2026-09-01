@@ -26,11 +26,11 @@ for (const caminho of CAMINHOS_FONTE) {
 
 /**
  * Gera o banner dinâmico do vencedor: template fixo (fundo vermelho ACE) +
- * foto do Discord recortada em círculo + nome/valor/data desenhados por cima,
+ * foto do Discord recortada em círculo + nome/valor desenhados por cima,
  * seguindo exatamente o layout-guia (posições em fração do template).
  * Retorna um Buffer PNG pronto pra anexar numa mensagem.
  */
-async function gerar({ avatarUrl, nome, valorTexto, dataTexto }) {
+async function gerar({ avatarUrl, nome, valorTexto }) {
   const template = await loadImage(TEMPLATE);
   const w = template.width;
   const h = template.height;
@@ -69,10 +69,7 @@ async function gerar({ avatarUrl, nome, valorTexto, dataTexto }) {
   ctx.fillText(String(nome || '').toUpperCase().slice(0, 24), cx, h * 0.768);
 
   ctx.font = `bold ${Math.round(w * 0.11)}px "${fonte}"`;
-  ctx.fillText(String(valorTexto || ''), cx, h * 0.845);
-
-  ctx.font = `bold ${Math.round(w * 0.058)}px "${fonte}"`;
-  ctx.fillText(String(dataTexto || ''), cx, h * 0.91);
+  ctx.fillText(String(valorTexto || ''), cx, h * 0.87);
 
   return canvas.encode('png');
 }
