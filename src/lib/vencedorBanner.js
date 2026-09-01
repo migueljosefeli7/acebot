@@ -65,14 +65,14 @@ async function gerar({ avatarUrl, nome, valorTexto, dataTexto }) {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#000000';
 
-  ctx.font = `bold ${Math.round(w * 0.095)}px "${fonte}"`;
-  ctx.fillText(String(nome || '').toUpperCase().slice(0, 24), cx, h * 0.777);
+  ctx.font = `bold ${Math.round(w * 0.088)}px "${fonte}"`;
+  ctx.fillText(String(nome || '').toUpperCase().slice(0, 24), cx, h * 0.768);
 
-  ctx.font = `bold ${Math.round(w * 0.115)}px "${fonte}"`;
-  ctx.fillText(String(valorTexto || ''), cx, h * 0.85);
+  ctx.font = `bold ${Math.round(w * 0.11)}px "${fonte}"`;
+  ctx.fillText(String(valorTexto || ''), cx, h * 0.845);
 
-  ctx.font = `bold ${Math.round(w * 0.065)}px "${fonte}"`;
-  ctx.fillText(String(dataTexto || ''), cx, h * 0.889);
+  ctx.font = `bold ${Math.round(w * 0.058)}px "${fonte}"`;
+  ctx.fillText(String(dataTexto || ''), cx, h * 0.91);
 
   return canvas.encode('png');
 }
