@@ -2161,18 +2161,15 @@ async function fecharTicket(thread, matchId, segundos) {
         ).run(Date.now(), propostaPendente.id);
       }
 
-      // Se algo arquivou antes da hora, reabre para conseguir trancar.
-      if (thread.archived) await thread.setArchived(false);
-      await thread.setLocked(true);
-      await thread.setArchived(true);
-      console.log(`🔒 Ticket da partida #${matchId} fechado.`);
+      await thread.delete(`Partida #${matchId} finalizada/cancelada`);
+      console.log(`🗑️ Ticket da partida #${matchId} excluído.`);
     } catch (e) {
       console.error(
-        `[partida #${matchId}] NAO consegui fechar o ticket: ${e.message}\n` +
+        `[partida #${matchId}] NAO consegui excluir o ticket: ${e.message}\n` +
         '   Confira se o bot tem a permissao "Gerenciar Tópicos" (Manage Threads) no canal de tickets.'
       );
       await thread.send(ui.msg(ui.bloco(cfg.COR.aviso,
-        ui.txt('⚠️ Não consegui trancar este ticket automaticamente.\n' +
+        ui.txt('⚠️ Não consegui excluir este ticket automaticamente.\n' +
           'Staff: falta a permissão **Gerenciar Tópicos** para o bot.'),
       ))).catch(() => {});
     }
