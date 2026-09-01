@@ -40,8 +40,9 @@ async function criarPix({ amount, userId, username, depositId }) {
       notification_url: `${cfg.publicUrl}/webhook/mercadopago`,
       external_reference: String(depositId),
       payer: {
-        // Mercado Pago exige um email. Sem email real do jogador, usamos um sintetico.
-        email: `player${userId}@acebot.local`,
+        // Mercado Pago exige um email valido. Sem email real do jogador, usamos um sintetico
+        // com dominio real (".local" é rejeitado em producao, mesmo passando no modo teste).
+        email: `player${userId}@aceapostado.com`,
         first_name: (username || 'Player').slice(0, 40),
       },
       metadata: { deposit_id: depositId, discord_id: userId },
