@@ -76,4 +76,29 @@ function obterLog(tipo) {
   };
 }
 
-module.exports = { ARQUIVOS, DIRETORIO, normalizar, obter, ARQUIVOS_LOG, obterLog };
+/* ------------------------------------------------- BANNERS DE STATUS (TICKET) */
+
+// Banners que entram no topo dos embeds de status dentro do ticket da partida.
+const ARQUIVOS_STATUS = Object.freeze({
+  finalizada: 'partida-finalizada.png',
+  iniciada: 'partida-iniciada.png',
+  regras: 'regras-status.png',
+  sos: 'sos.png',
+});
+
+/** Igual a obter(), mas para os banners de status do ticket (finalizada/iniciada/regras/sos). */
+function obterStatus(tipo) {
+  const nome = ARQUIVOS_STATUS[tipo];
+  if (!nome) return null;
+
+  const caminho = path.join(DIRETORIO, nome);
+  if (!fs.existsSync(caminho)) return null;
+
+  return {
+    nome,
+    caminho,
+    url: `attachment://${nome}`,
+  };
+}
+
+module.exports = { ARQUIVOS, DIRETORIO, normalizar, obter, ARQUIVOS_LOG, obterLog, ARQUIVOS_STATUS, obterStatus };

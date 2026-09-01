@@ -534,8 +534,10 @@ async function proporRegras(interaction, matchId, { mudanca = false } = {}) {
     .run(regras, interaction.user.id, matchId);
 
   const adv = oponente(m, interaction.user.id);
+  const bannerRegras = banners.obterStatus('regras');
 
   await interaction.reply(ui.msg(ui.bloco(cfg.COR.aviso,
+    bannerRegras ? ui.imagem(bannerRegras.url) : null,
     ui.titulo(mudanca ? '📜 NOVA REGRA PROPOSTA' : '📜 REGRAS PROPOSTAS'),
     ui.nota(`Partida #${matchId}`),
     ui.divisor(),
@@ -548,7 +550,7 @@ async function proporRegras(interaction, matchId, { mudanca = false } = {}) {
       ui.botao(`match:rules_change:${matchId}`, 'MUDAR REGRA', { estilo: ui.ESTILO.Primary, emoji: '✏️' }),
       mudanca ? ui.botao(`match:rules_refuse:${matchId}`, 'RECUSAR', { estilo: ui.ESTILO.Danger, emoji: '❌' }) : null,
     ),
-  )));
+  ), bannerRegras ? { files: [{ attachment: bannerRegras.caminho, name: bannerRegras.nome }] } : {}));
 
   await atualizarPainel(interaction.client, matchId);
 }
@@ -663,7 +665,9 @@ async function marcarSalaCriada(client, matchId) {
 
   const thread = m.thread_id ? await client.channels.fetch(m.thread_id).catch(() => null) : null;
   if (thread) {
+    const bannerIniciada = banners.obterStatus('iniciada');
     const msg = await thread.send(ui.msg(ui.bloco(cfg.COR.primaria,
+      bannerIniciada ? ui.imagem(bannerIniciada.url) : null,
       ui.titulo('🕹️ SALA CRIADA'),
       ui.nota(`Partida #${matchId}`),
       ui.divisor(),
@@ -671,7 +675,7 @@ async function marcarSalaCriada(client, matchId) {
         'Quando os dois estiverem prontos, digitem **+go** aqui no chat.\n' +
         `Se ninguém digitar, a partida começa sozinha em até ${cfg.goMinutos} minutos.`
       ),
-    ))).catch(() => null);
+    ), bannerIniciada ? { files: [{ attachment: bannerIniciada.caminho, name: bannerIniciada.nome }] } : {})).catch(() => null);
     if (msg) db.prepare('UPDATE matches SET go_msg_id = ? WHERE id = ?').run(msg.id, matchId);
   }
 
@@ -1778,7 +1782,9 @@ async function abrirDisputa(client, matchId, motivo) {
   const thread = await client.channels.fetch(m.thread_id).catch(() => null);
 
   if (thread) {
+    const bannerSos = banners.obterStatus('sos');
     await thread.send(ui.msg(ui.bloco(cfg.COR.erro,
+      bannerSos ? ui.imagem(bannerSos.url) : null,
       ui.titulo('🆘 SUPORTE ACIONADO'),
       ui.nota(`Partida #${matchId} · ${m.modalidade} · ${money.fmt(m.valor)}`),
       ui.divisor(),
@@ -1789,7 +1795,7 @@ async function abrirDisputa(client, matchId, motivo) {
         'Mandem neste ticket as informações, prints e provas do problema.'
       ),
       await botoesVeredito(client, m),
-    )));
+    ), bannerSos ? { files: [{ attachment: bannerSos.caminho, name: bannerSos.nome }] } : {}));
   }
 
   // Chama no privado todo mundo que tem o cargo de staff.
@@ -2000,7 +2006,9 @@ async function finalizarPartida(client, matchId, vencedorId, motivo) {
   }
 
   if (thread) {
+    const bannerFinalizada = banners.obterStatus('finalizada');
     await thread.send(ui.msg(ui.bloco(cfg.COR.sucesso,
+      bannerFinalizada ? ui.imagem(bannerFinalizada.url) : null,
       ui.titulo('🏆 PARABÉNS AO VENCEDOR!'),
       ui.nota(`Partida #${matchId} · ${m.modalidade} · ${modo(m)}`),
       ui.divisor(),
@@ -2030,7 +2038,7 @@ async function finalizarPartida(client, matchId, vencedorId, motivo) {
         }),
       ),
       ui.nota('Se aceitarem, a nova partida começa neste mesmo canal.'),
-    )));
+    ), bannerFinalizada ? { files: [{ attachment: bannerFinalizada.caminho, name: bannerFinalizada.nome }] } : {}));
   }
 
   // Pontos de ranqueada: vencedor sobe, perdedor desce (nunca abaixo de zero).
