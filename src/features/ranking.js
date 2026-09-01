@@ -174,26 +174,11 @@ async function sincronizarCargosTopo(client, guildId) {
   return { ok: true, mudou };
 }
 
-/** Anuncia no canal do ranking quem entrou ou saiu do pódio. */
-async function anunciarTopo(client, guildId, mudou) {
-  if (!mudou?.length) return;
-  const canal = await gc.channel(client, guildId, 'canal_ranking');
-  if (!canal) return;
-
-  const ganhou = mudou.filter((m) => m.acao === 'ganhou');
-  if (!ganhou.length) return;
-
-  await canal.send(ui.msg(ui.bloco(cfg.COR.aviso,
-    ui.titulo('👑 MUDANÇA NO PÓDIO'),
-    ui.divisor(),
-    ui.txt(ganhou.map((m) => `${MEDALHAS[m.posicao - 1]} <@${m.userId}> assumiu o **Top ${m.posicao}**`).join('\n')),
-  ))).catch(() => {});
-}
-
 /** Rotina completa após uma partida: cargos do topo + painel. */
 async function atualizarTudo(client, guildId) {
-  const r = await sincronizarCargosTopo(client, guildId);
-  await anunciarTopo(client, guildId, r.mudou);
+  // A mudança de pódio já fica visível no próprio embed do ranking (atualizarPainel)
+  // — não manda mais uma mensagem de log separada pra isso.
+  await sincronizarCargosTopo(client, guildId);
   await atualizarPainel(client, guildId);
 }
 
