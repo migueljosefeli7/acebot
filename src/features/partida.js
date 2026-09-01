@@ -776,6 +776,26 @@ async function liberarResultado(client, matchId) {
 
   db.prepare('UPDATE matches SET pronto_pra_resultado = 1 WHERE id = ?').run(matchId);
   await atualizarPainel(client, matchId);
+
+  // Não basta habilitar o seletor no painel lá em cima — manda um embed novo
+  // avisando que a partida acabou e pedindo pra escolher o vencedor aqui embaixo.
+  try {
+    const atualizado = get(matchId);
+    const thread = await client.channels.fetch(atualizado.thread_id);
+    const banner = banners.obterStatus('finalizada');
+    await thread.send(ui.msg([
+      ui.bloco(cfg.COR.primaria,
+        banner ? ui.imagem(banner.url) : null,
+        ui.titulo('🏁 PARTIDA FINALIZADA'),
+        ui.divisor(),
+        ui.txt('A sala confirmou o fim da partida. Selecione quem venceu no menu abaixo.'),
+      ),
+      seletorVencedor(atualizado, client),
+    ], banner ? { files: [{ attachment: banner.caminho, name: banner.nome }] } : {}));
+  } catch (e) {
+    console.error(`[partida #${matchId}] falha ao enviar aviso de resultado liberado:`, e.message);
+  }
+
   return true;
 }
 
@@ -1396,16 +1416,8 @@ const criarPartidaDeRevanche = db.transaction((proposalId, userId) => {
   const anterior = get(p.match_id);
   if (!anterior || anterior.status !== 'FINALIZADA') return { erro: 'PARTIDA_INVALIDA' };
 
-  for (const jogadorId of [p.proposer_id, p.opponent_id]) {
-    const ativa = db.prepare(
-      `SELECT id FROM matches
-       WHERE (p1 = ? OR p2 = ?) AND id != ?
-         AND status NOT IN ('FINALIZADA', 'CANCELADA')
-       LIMIT 1`
-    ).get(jogadorId, jogadorId, anterior.id);
-    if (ativa) return { erro: 'EM_PARTIDA', jogadorId, matchId: ativa.id };
-  }
-
+  // O jogador pode puxar quantas partidas quiser ao mesmo tempo — sem limite
+  // de "já está em outra partida" travando a revanche.
   const pagos = {};
   for (const jogadorId of [p.proposer_id, p.opponent_id]) {
     pagos[jogadorId] = wallet.getJogavel(jogadorId) >= p.amount;
@@ -1440,9 +1452,6 @@ async function aceitarRevanche(interaction, proposalId) {
   if (r.erro === 'JA_RESOLVIDA') return nao(interaction, 'Proposta já resolvida', 'Essa proposta já foi aceita ou recusada.');
   if (r.erro === 'NAO_E_O_ALVO') return nao(interaction, 'Não é para você', 'Só o jogador desafiado pode aceitar.');
   if (r.erro === 'PARTIDA_INVALIDA') return nao(interaction, 'Partida indisponível', 'A partida anterior não pode gerar revanche agora.');
-  if (r.erro === 'EM_PARTIDA') {
-    return nao(interaction, 'Partida em aberto', `<@${r.jogadorId}> ainda está na partida #${r.matchId}.`);
-  }
 
   const m = r.match;
   await interaction.update(ui.msg(ui.bloco(cfg.COR.sucesso,
