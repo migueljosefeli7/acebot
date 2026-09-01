@@ -36,4 +36,7 @@ module.exports = {
   troféu: '🏆',
   aviso: '⚠️',
   emulador: '🖥️',     // fila Misto (quantidade de EMU no time)
+  mobile: '📱',       // fila 1x1 Tático (categoria Mobile)
+  entrar: '➡️',       // fila: opcao padrao "Entrar na Fila"
+  fullArma: '🔫',     // fila 2x2/3x3/4x4 Mobile/Emulador (categoria Full UMP e XM8)
 };

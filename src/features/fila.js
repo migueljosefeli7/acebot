@@ -23,6 +23,8 @@ const entradas = (queueId) =>
 
 /** "Misto" (1 emu + resto mobile por time) não usa gelo — usa quantidade de EMU no time. */
 const ehMisto = (modalidade) => /misto/i.test(modalidade || '');
+const ehTatico = (modalidade) => /t[aá]tico/i.test(modalidade || '');
+const ehMobileOuEmulador = (modalidade) => /mobile|emulador/i.test(modalidade || '');
 
 /** Tamanho do time a partir do "3x3 Misto" -> 3. Nunca existe 1x1 Misto (precisa de pelo menos 1 emu + 1 mobile). */
 const tamanhoTime = (modalidade) => {
@@ -30,20 +32,51 @@ const tamanhoTime = (modalidade) => {
   return m ? Number(m[1]) : 1;
 };
 
+/** Valor de gelo que dispensa a etapa de combinar regras (já vem acertado na entrada da fila). */
+const ehFullUmpXm8 = (gelo) => gelo === 'FULL_UMP_XM8';
+
 /**
  * Opções de entrada na fila dessa modalidade — cada uma vira um botão e só
- * empareia com quem escolheu o MESMO valor (mesma regra pro gelo e pro EMU).
- *  - Mobile/Emulador/Tático: Gelo Normal ou Gelo Infinito (fixo).
+ * empareia com quem escolheu o MESMO valor:
+ *  - 1x1 Mobile/Emulador: Gelo Normal ou Gelo Infinito (fixo).
+ *  - 1x1 Tático: Emulador ou Mobile.
+ *  - 2x2/3x3/4x4 Mobile/Emulador: Entrar na Fila (regras normais) ou Full UMP e XM8
+ *    (regra já vem acertada, o bot pula a etapa de combinar regras).
+ *  - 2x2/3x3/4x4 Tático: Entrar na Fila (full mobile) até N-1 EMU no time.
  *  - Misto: quantidade de EMU no time, de 1 até (tamanho do time - 1).
  */
 function opcoesModo(modalidade) {
+  const tamanho = tamanhoTime(modalidade);
+
   if (ehMisto(modalidade)) {
-    const qtd = Math.max(1, tamanhoTime(modalidade) - 1);
+    const qtd = Math.max(1, tamanho - 1);
     return Array.from({ length: qtd }, (_, i) => {
       const n = i + 1;
       return { valor: `EMU${n}`, label: `${n} Emu`, emoji: emo.emulador };
     });
   }
+
+  if (ehTatico(modalidade)) {
+    if (tamanho <= 1) {
+      return [
+        { valor: 'EMULADOR', label: 'Emulador', emoji: emo.emulador },
+        { valor: 'MOBILE', label: 'Mobile', emoji: emo.mobile },
+      ];
+    }
+    return Array.from({ length: tamanho }, (_, n) => (
+      n === 0
+        ? { valor: 'EMU0', label: 'Entrar na Fila', emoji: emo.entrar }
+        : { valor: `EMU${n}`, label: `${n} Emu`, emoji: emo.emulador }
+    ));
+  }
+
+  if (tamanho > 1 && ehMobileOuEmulador(modalidade)) {
+    return [
+      { valor: 'PADRAO', label: 'Entrar na Fila', emoji: emo.entrar },
+      { valor: 'FULL_UMP_XM8', label: 'Full UMP e XM8', emoji: emo.fullArma },
+    ];
+  }
+
   return [
     { valor: 'INFINITO', label: 'Gelo Infinito', emoji: emo.infinito },
     { valor: 'NORMAL', label: 'Gelo Normal', emoji: emo.gelo },
@@ -54,6 +87,11 @@ function opcoesModo(modalidade) {
 function rotuloModo(gelo) {
   if (gelo === 'INFINITO') return 'Gelo Infinito';
   if (gelo === 'NORMAL') return 'Gelo Normal';
+  if (gelo === 'PADRAO') return 'Entrar na Fila';
+  if (gelo === 'FULL_UMP_XM8') return 'Full UMP e XM8';
+  if (gelo === 'MOBILE') return 'Mobile';
+  if (gelo === 'EMULADOR') return 'Emulador';
+  if (gelo === 'EMU0') return 'Entrar na Fila';
   const m = /^EMU(\d+)$/.exec(gelo || '');
   if (m) return `${m[1]} Emu`;
   return gelo || '—';
@@ -193,12 +231,17 @@ const entrarNaFila = db.transaction((queueId, userId, gelo) => {
 
   // p1 = quem estava esperando, p2 = quem acabou de entrar.
   const tudoPago = par.pago && pago;
+  // Full UMP e XM8: os dois já concordaram com a regra ao entrar na fila —
+  // pula direto pra criação da sala, sem passar por combinar/aceitar regras.
+  const pulaRegras = ehFullUmpXm8(gelo);
+  const status = tudoPago ? (pulaRegras ? 'AGUARDANDO_SALA' : 'AGUARDANDO_REGRAS') : 'AGUARDANDO_PAGAMENTO';
+  const regras = pulaRegras && tudoPago ? 'Full UMP e XM8' : null;
   const info = db.prepare(
     `INSERT INTO matches (guild_id, queue_id, modalidade, gelo, valor, taxa, p1, p2,
-                          pago_p1, pago_p2, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                          pago_p1, pago_p2, status, regras, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(q.guild_id, q.id, q.modalidade, gelo, q.valor, cfg.taxaPartida, par.user_id, userId,
-    par.pago, pago, tudoPago ? 'AGUARDANDO_REGRAS' : 'AGUARDANDO_PAGAMENTO', Date.now());
+    par.pago, pago, status, regras, Date.now());
 
   return {
     ok: true, queue: q, filaAnterior, pago, saldo,
@@ -271,7 +314,7 @@ async function apagarPermanente(client, q) {
 
 module.exports = {
   GELO, MODALIDADES, getQueue, entradas, listarTodas,
-  ehMisto, tamanhoTime, opcoesModo, rotuloModo,
+  ehMisto, ehTatico, ehFullUmpXm8, tamanhoTime, opcoesModo, rotuloModo,
   linhasJogadores, painel, arteLocal, mensagemPainel, atualizarPainel, publicarPainel,
   republicarUma, republicarTodas, desativar, apagarPermanente,
   entrarNaFila, sairDaFila,

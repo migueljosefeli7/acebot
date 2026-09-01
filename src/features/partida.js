@@ -13,6 +13,7 @@ const gc = require('../lib/guildconfig');
 const notificar = require('../lib/notificar');
 const banners = require('../lib/banners');
 const salaBot = require('../bots/salaBot');
+const fila = require('./fila');
 
 const get = (id) => db.prepare('SELECT * FROM matches WHERE id = ?').get(id);
 const getByThread = (threadId) => db.prepare('SELECT * FROM matches WHERE thread_id = ? ORDER BY id DESC LIMIT 1').get(threadId);
@@ -20,7 +21,7 @@ const setStatus = (id, status) => db.prepare('UPDATE matches SET status = ? WHER
 const oponente = (m, userId) => (m.p1 === userId ? m.p2 : m.p1);
 const ehJogador = (m, userId) => m.p1 === userId || m.p2 === userId;
 const premio = (m) => m.valor * 2 - m.taxa;
-const modo = (m) => (m.gelo === 'INFINITO' ? 'Gelo Infinito' : 'Gelo Normal');
+const modo = (m) => fila.rotuloModo(m.gelo);
 const LINK_REGRAS = 'https://discord.com/channels/1541905325895065671/1541922210028064798';
 
 const STATUS = {
@@ -337,6 +338,13 @@ async function abrirTicket(client, matchId) {
     await cobrancaNoTicket(thread, atualizado);
   }
 
+  // Full UMP e XM8 com os dois já pagos: a partida nasce direto em
+  // AGUARDANDO_SALA (regras dispensadas), então precisa acionar o sala-bot
+  // aqui — não existe etapa de "aceitar regras" pra disparar isso desta vez.
+  if (atualizado.status === 'AGUARDANDO_SALA') {
+    salaBot.enviarComandoSala(thread.id, atualizado).catch(() => {});
+  }
+
   await avisarNoPv(client, get(matchId), thread);
   return thread;
 }
@@ -416,9 +424,14 @@ const marcarPago = db.transaction((matchId, userId, viaSaldo) => {
 
   const atual = get(matchId);
   if (pagouTudo(atual) && atual.status === 'AGUARDANDO_PAGAMENTO') {
-    // Revanche já reaproveita as regras combinadas — pula direto pra criação da
-    // sala (mesma etapa que aciona o sala-bot). Partida comum ainda combina regras.
-    setStatus(matchId, ehRevanche(matchId) ? 'AGUARDANDO_SALA' : 'AGUARDANDO_REGRAS');
+    // Revanche já reaproveita as regras combinadas, e Full UMP e XM8 já vem
+    // acertado desde a fila — os dois pulam direto pra criação da sala (mesma
+    // etapa que aciona o sala-bot). Partida comum ainda combina regras.
+    const pulaRegras = ehRevanche(matchId) || fila.ehFullUmpXm8(atual.gelo);
+    if (pulaRegras && fila.ehFullUmpXm8(atual.gelo) && !atual.regras) {
+      db.prepare("UPDATE matches SET regras = 'Full UMP e XM8' WHERE id = ?").run(matchId);
+    }
+    setStatus(matchId, pulaRegras ? 'AGUARDANDO_SALA' : 'AGUARDANDO_REGRAS');
   }
   return { jaPago: false, match: get(matchId) };
 });
@@ -439,20 +452,22 @@ async function anunciarPagamento(client, r, userId, amount) {
 
   if (thread) {
     const revanche = ehRevanche(m.id);
+    const fullUmpXm8 = fila.ehFullUmpXm8(m.gelo);
+    const pulaRegras = revanche || fullUmpXm8;
     await thread.send(ui.msg(ui.bloco(cfg.COR.sucesso,
       ui.titulo('✅ PAGAMENTO CONFIRMADO'),
       ui.txt(`<@${userId}> pagou **${money.fmt(amount)}** e está dentro.`),
       ui.divisor(),
       pagouTudo(m)
-        ? ui.txt(revanche
+        ? ui.txt(pulaRegras
           ? 'Os dois valores estão garantidos. **Aguardando a criação da sala.**'
           : 'Os dois valores estão garantidos. **Podem combinar as regras.**')
         : ui.txt(`Ainda falta ${devendo(m).map((id) => `<@${id}>`).join(' e ')} pagar.`),
     )));
 
-    // Revanche pula regras — aciona o sala-bot na hora, igual confirmarRegras() faz
-    // pra partida comum. Sem isso o +cs nunca era enviado pra revanche paga depois.
-    if (pagouTudo(m) && revanche) {
+    // Revanche e Full UMP e XM8 pulam regras — aciona o sala-bot na hora, igual
+    // confirmarRegras() faz pra partida comum. Sem isso o +cs nunca era enviado.
+    if (pagouTudo(m) && pulaRegras) {
       const salaBotId = salaBot.getUserId();
       if (salaBotId) await thread.members.add(salaBotId).catch(() => {});
       salaBot.enviarComandoSala(thread.id, m).catch(() => {});
@@ -461,7 +476,7 @@ async function anunciarPagamento(client, r, userId, amount) {
     // Partida comum: so agora, com os dois pagamentos confirmados, e que faz
     // sentido explicar "como combinar regras" — antes disso nem era uma
     // partida confirmada de verdade.
-    if (pagouTudo(m) && !revanche) {
+    if (pagouTudo(m) && !pulaRegras) {
       await thread.send(ui.msg(comoFuncionaBloco(m))).catch(() => {});
     }
   }
