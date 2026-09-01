@@ -55,6 +55,8 @@ const COLUNAS_NOVAS = [
   ['matches', 'go_msg_id', 'TEXT'],
   ['matches', 'em_andamento_em', 'INTEGER'],
   ['matches', 'pronto_pra_resultado', 'INTEGER NOT NULL DEFAULT 0'],
+  ['matches', 'sala_status_msg_id', 'TEXT'],
+  ['matches', 'sala_placar_msg_id', 'TEXT'],
 ];
 
 for (const [tabela, coluna, tipo] of COLUNAS_NOVAS) {

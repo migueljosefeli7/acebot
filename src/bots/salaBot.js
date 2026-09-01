@@ -11,10 +11,16 @@ const cfg = require('../config');
 let client = null;
 let pronto = false;
 
-function tipoDaSala(m) {
-  if ((m.modalidade || '').includes('Tático')) return 3;
-  if (m.gelo === 'INFINITO') return 2;
-  return 1;
+/**
+ * Comando que o self-bot manda pra ferramenta externa criar a sala.
+ * Tático sempre manda a palavra "TÁTICO"; o resto manda o símbolo do modo
+ * (Misto e qualquer outra coisa cai no # — mesmo símbolo do Gelo Normal).
+ */
+function comandoSala(m) {
+  if ((m.modalidade || '').includes('Tático')) return 'TÁTICO';
+  if (m.gelo === 'INFINITO') return '*';
+  if (m.gelo === 'FULL_UMP_XM8') return '%';
+  return '#';
 }
 
 async function iniciar() {
@@ -50,18 +56,18 @@ async function iniciar() {
   }
 }
 
-/** Manda +cs N no canal do ticket. Nunca lança — falha aqui não pode travar o bot principal. */
+/** Manda o comando da sala no canal do ticket. Nunca lança — falha aqui não pode travar o bot principal. */
 async function enviarComandoSala(channelId, m) {
   if (!pronto || !client) return;
   try {
     const canal = await client.channels.fetch(channelId);
     if (!canal) return;
-    await canal.send(`+cs ${tipoDaSala(m)}`);
+    await canal.send(comandoSala(m));
   } catch (e) {
-    console.error(`❌ [sala-bot] falha ao enviar +cs no canal ${channelId}:`, e.message);
+    console.error(`❌ [sala-bot] falha ao enviar comando de sala no canal ${channelId}:`, e.message);
   }
 }
 
 const getUserId = () => client?.user?.id || null;
 
-module.exports = { iniciar, enviarComandoSala, tipoDaSala, getUserId };
+module.exports = { iniciar, enviarComandoSala, comandoSala, getUserId };

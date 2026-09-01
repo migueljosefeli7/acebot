@@ -11,9 +11,8 @@ const handleInteraction = require('./interactions');
 const onSugestao = require('./events/sugestao');
 const onCompletar = require('./events/completar');
 const onIaChat = require('./events/iaChat');
-const onSalaCriada = require('./events/salaCriada');
 const onGoPartida = require('./events/goPartida');
-const onPartidaFinalizadaExterna = require('./events/partidaFinalizadaExterna');
+const salaBotMirror = require('./events/salaBotMirror');
 const membros = require('./lib/membros');
 const ratelimit = require('./lib/ratelimit');
 const { iniciarWebhook } = require('./web/server');
@@ -114,9 +113,9 @@ client.on(Events.InteractionCreate, handleInteraction);
 client.on(Events.MessageCreate, onSugestao);
 client.on(Events.MessageCreate, onCompletar);
 client.on(Events.MessageCreate, onIaChat);
-client.on(Events.MessageCreate, onSalaCriada);
 client.on(Events.MessageCreate, onGoPartida);
-client.on(Events.MessageCreate, onPartidaFinalizadaExterna);
+client.on(Events.MessageCreate, salaBotMirror.onMessageCreate);
+client.on(Events.MessageUpdate, salaBotMirror.onMessageUpdate);
 
 /* ------------------------------------------------- LIMPEZA DE PENDENCIAS */
 

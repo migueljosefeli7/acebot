@@ -15,6 +15,7 @@ const banners = require('../lib/banners');
 const vencedorBanner = require('../lib/vencedorBanner');
 const salaBot = require('../bots/salaBot');
 const fila = require('./fila');
+const emo = require('../lib/emojis');
 
 const get = (id) => db.prepare('SELECT * FROM matches WHERE id = ?').get(id);
 const getByThread = (threadId) => db.prepare('SELECT * FROM matches WHERE thread_id = ? ORDER BY id DESC LIMIT 1').get(threadId);
@@ -2373,12 +2374,93 @@ async function pedirCancelamento(interaction, matchId) {
   )));
 }
 
+/**
+ * Monta o embed com o roster ao vivo que a ferramenta externa de sala manda
+ * (TIME 1/TIME 2, até 4 slots cada, "Aguardando jogador..." ou nome + ID),
+ * com a identidade visual da ACE. Ver src/events/salaBotMirror.js.
+ */
+function embedInformacoesSala(m, infoSala) {
+  const linhaTime = (lista, numero) => {
+    const linhas = (lista || []).map((j) => {
+      if (j.vazio) return `\`${j.slot}\` ⏳ _aguardando jogador..._`;
+      return `\`${j.slot}\` ${emo.emulador} **${j.nome}**${j.ffid ? ` — \`${j.ffid}\`` : ''}`;
+    });
+    return `**TIME ${numero}**\n${linhas.length ? linhas.join('\n') : '_vazio_'}`;
+  };
+
+  return ui.bloco(cfg.COR.primaria,
+    ui.titulo('🎮 INFORMAÇÕES DA SALA'),
+    ui.nota(`Partida #${m.id}`),
+    ui.divisor(),
+    ui.txt(linhaTime(infoSala.times?.[1], 1)),
+    ui.divisor(),
+    ui.txt(linhaTime(infoSala.times?.[2], 2)),
+    ui.divisor(),
+    ui.secao(infoSala.statusLabel === 'PRONTA' ? '✅ SALA PRONTA' : '⏳ AGUARDANDO JOGADORES'),
+  );
+}
+
+/**
+ * Cria (uma vez) ou edita (nas próximas vezes) o embed de roster da sala —
+ * espelha, com a identidade da ACE, o cartão que a ferramenta externa fica
+ * atualizando à medida que os jogadores entram na sala.
+ */
+async function atualizarStatusSala(client, matchId, infoSala) {
+  const m = get(matchId);
+  if (!m || !m.thread_id) return;
+
+  try {
+    const thread = await client.channels.fetch(m.thread_id);
+    const carga = ui.msg(embedInformacoesSala(m, infoSala));
+
+    if (m.sala_status_msg_id) {
+      const editado = await thread.messages.edit(m.sala_status_msg_id, carga).catch(() => null);
+      if (editado) return;
+    }
+
+    const enviado = await thread.send(carga);
+    db.prepare('UPDATE matches SET sala_status_msg_id = ? WHERE id = ?').run(enviado.id, matchId);
+  } catch (e) {
+    console.error(`[partida #${matchId}] falha ao atualizar status da sala:`, e.message);
+  }
+}
+
+/**
+ * Cria (uma vez) ou edita (a cada round) o embed do placar ao vivo — espelha
+ * a mensagem "A partida está NxM!" que a ferramenta externa fica editando.
+ */
+async function atualizarPlacarSala(client, matchId, placarVencedor, placarPerdedor) {
+  const m = get(matchId);
+  if (!m || !m.thread_id) return;
+
+  try {
+    const thread = await client.channels.fetch(m.thread_id);
+    const carga = ui.msg(ui.bloco(cfg.COR.aviso,
+      ui.titulo('📊 PLACAR AO VIVO'),
+      ui.nota(`Partida #${matchId}`),
+      ui.divisor(),
+      ui.txt(`A partida está **${placarVencedor} x ${placarPerdedor}**`),
+    ));
+
+    if (m.sala_placar_msg_id) {
+      const editado = await thread.messages.edit(m.sala_placar_msg_id, carga).catch(() => null);
+      if (editado) return;
+    }
+
+    const enviado = await thread.send(carga);
+    db.prepare('UPDATE matches SET sala_placar_msg_id = ? WHERE id = ?').run(enviado.id, matchId);
+  } catch (e) {
+    console.error(`[partida #${matchId}] falha ao atualizar placar da sala:`, e.message);
+  }
+}
+
 module.exports = {
   get, getByThread, oponente, ehJogador, premio, painel, botoes, atualizarPainel,
   devendo, pagouTudo, cobrancaNoTicket, registrarPagamento, registrarPagamentoPorSaldo,
   botoesVeredito, fecharTicket, abrirTicket, avisarNoPv, modalRegras, proporRegras,
   confirmarRegras, recusarRegras, iniciarPartida, iniciarPartidaAutomatico,
   marcarSalaCriada, registrarGo, resolverGoAutomatico, liberarResultado, resolverResultadoAutomatico,
+  atualizarStatusSala, atualizarPlacarSala,
   vencedorPelosClaims, recuperarResultadosPendentes, resolverAbandonos,
   selecionarVencedor, confirmarVencedor, cancelarEscolhaVencedor, chamarSuporte, chamarVarStaff,
   modalRevanche, abrirModalRevanche, proporRevanche, aceitarRevanche, recusarRevanche,

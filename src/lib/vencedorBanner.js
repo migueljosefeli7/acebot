@@ -1,28 +1,8 @@
-const fs = require('node:fs');
 const path = require('node:path');
-const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+const { createCanvas, loadImage } = require('@napi-rs/canvas');
+const { nome: fonte } = require('./fontes');
 
 const TEMPLATE = path.join(__dirname, '..', '..', 'assets', 'banners', 'vencedor-template.png');
-
-// Fonte da identidade visual (Druk Wide Bold). Solte o arquivo em
-// assets/fonts/ com um desses nomes que ele é registrado automaticamente.
-// Sem o arquivo, cai pro Arial em negrito — o layout continua funcionando.
-const FONTE_NOME = 'Druk Wide Bold';
-const CAMINHOS_FONTE = [
-  'DrukWideBold.otf', 'DrukWideBold.ttf',
-  'Druk Wide Bold.otf', 'Druk Wide Bold.ttf',
-].map((f) => path.join(__dirname, '..', '..', 'assets', 'fonts', f));
-
-let fonte = 'Arial';
-for (const caminho of CAMINHOS_FONTE) {
-  if (fs.existsSync(caminho)) {
-    try {
-      GlobalFonts.registerFromPath(caminho, FONTE_NOME);
-      fonte = FONTE_NOME;
-      break;
-    } catch { /* arquivo invalido: segue com Arial */ }
-  }
-}
 
 /**
  * Gera o banner dinâmico do vencedor: template fixo (fundo vermelho ACE) +
