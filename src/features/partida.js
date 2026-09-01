@@ -634,7 +634,9 @@ async function iniciarPartida(interaction, matchId) {
   setStatus(matchId, 'EM_ANDAMENTO');
   db.prepare('UPDATE matches SET em_andamento_em = ? WHERE id = ?').run(Date.now(), matchId);
 
+  const bannerIniciadaManual = banners.obterStatus('iniciada');
   await interaction.reply(ui.msg(ui.bloco(cfg.COR.primaria,
+    bannerIniciadaManual ? ui.imagem(bannerIniciadaManual.url) : null,
     ui.titulo('🔴 PARTIDA INICIADA'),
     ui.nota(`Partida #${matchId} · iniciada por ${interaction.user}`),
     ui.divisor(),
@@ -643,7 +645,7 @@ async function iniciarPartida(interaction, matchId) {
       '🏁 Quando acabar, **um jogador seleciona quem venceu no painel da partida** e o adversário confirma. ' +
       'Se houver qualquer problema, use **CHAMAR SUPORTE**.'
     ),
-  )));
+  ), bannerIniciadaManual ? { files: [{ attachment: bannerIniciadaManual.caminho, name: bannerIniciadaManual.nome }] } : {}));
 
   // Fica no ticket durante a partida como um SOS permanente para os jogadores.
   await interaction.channel.send(ui.msg(painelSuporte(get(matchId)))).catch(() => {});
@@ -724,7 +726,9 @@ async function iniciarPartidaAutomatico(client, matchId) {
       await canal.messages.delete(m.go_msg_id).catch(() => {});
     }
 
+    const bannerIniciadaAuto = banners.obterStatus('iniciada');
     await canal.send(ui.msg(ui.bloco(cfg.COR.primaria,
+      bannerIniciadaAuto ? ui.imagem(bannerIniciadaAuto.url) : null,
       ui.titulo('🔴 PARTIDA INICIADA'),
       ui.nota(`Partida #${matchId} · sala confirmada automaticamente`),
       ui.divisor(),
@@ -733,7 +737,7 @@ async function iniciarPartidaAutomatico(client, matchId) {
         '🏁 Quando acabar, **um jogador seleciona quem venceu no painel da partida** e o adversário confirma. ' +
         'Se houver qualquer problema, use **CHAMAR SUPORTE**.'
       ),
-    ))).catch(() => {});
+    ), bannerIniciadaAuto ? { files: [{ attachment: bannerIniciadaAuto.caminho, name: bannerIniciadaAuto.nome }] } : {})).catch(() => {});
 
     // Fica no ticket durante a partida como um SOS permanente para os jogadores.
     await canal.send(ui.msg(painelSuporte(get(matchId)))).catch(() => {});
