@@ -2075,6 +2075,7 @@ async function finalizarPartida(client, matchId, vencedorId, motivo) {
   // e manda por DM convidando a postar nas redes. Nunca pode derrubar a
   // finalização — já mexemos com dinheiro, um erro aqui é só cosmético.
   await enviarBannerVencedor(client, m, vencedorId, thread);
+  await avisarSaldoLiberado(client, vencedorId, premio(m));
 
   // Pontos de ranqueada: vencedor sobe, perdedor desce (nunca abaixo de zero).
   await pontuarPartida(client, m, vencedorId, perdedorId, thread, motivo);
@@ -2139,6 +2140,26 @@ async function enviarBannerVencedor(client, m, vencedorId, thread) {
     }
   } catch (e) {
     console.error(`[partida #${m.id}] falha ao gerar/enviar banner do vencedor:`, e.message);
+  }
+}
+
+/** Avisa o vencedor por DM que o prêmio já está na carteira e onde sacar. */
+async function avisarSaldoLiberado(client, vencedorId, valor) {
+  try {
+    const user = await client.users.fetch(vencedorId).catch(() => null);
+    if (!user) return;
+
+    await user.send(ui.msg(ui.bloco(cfg.COR.sucesso,
+      ui.titulo('💰 SALDO ADICIONADO'),
+      ui.divisor(),
+      ui.txt(
+        `Parabéns! **${money.fmt(valor)}** foi adicionado à sua carteira.\n\n` +
+        'Você pode sacar a qualquer momento no canal abaixo:\n' +
+        'https://discord.com/channels/1541905325895065671/1541934174015987802'
+      ),
+    ))).catch(() => {});
+  } catch (e) {
+    console.error(`[partida] falha ao avisar saldo liberado de <@${vencedorId}>:`, e.message);
   }
 }
 
