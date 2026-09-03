@@ -34,7 +34,7 @@ async function criarPix({ amount, userId, username, depositId }) {
   const res = await payment.create({
     body: {
       transaction_amount: money.toReais(amount),
-      description: `Deposito ZE BOT - ${username}`,
+      description: `Deposito ACE - ${username}`,
       payment_method_id: 'pix',
       date_of_expiration: new Date(expiresAt).toISOString(),
       notification_url: `${cfg.publicUrl}/webhook/mercadopago`,
