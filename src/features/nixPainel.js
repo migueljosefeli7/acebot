@@ -16,18 +16,29 @@ const match = (id) => require('./partida').get(id);
 const row = (...buttons) => new ActionRowBuilder().addComponents(buttons);
 const button = (id, label, style, disabled = false) => new ButtonBuilder()
   .setCustomId(id).setLabel(label).setStyle(style).setDisabled(disabled);
+const device = (platform) => platform === 'mobile' ? '📱 Mobile' : platform === 'emulator' ? '🖥️ PC/Emulador' : '❔ Não informado';
+const timestamp = (value) => {
+  if (!value) return '—';
+  const millis = typeof value === 'number' ? (value < 1e12 ? value * 1000 : value) : Date.parse(value);
+  return Number.isFinite(millis) ? `<t:${Math.floor(millis / 1000)}:F>` : clean(value);
+};
+const playerLine = (p) => `• ${p.platform === 'mobile' ? '📱' : p.platform === 'emulator' ? '🖥️' : '❔'} **#${clean(p.slot)} ${clean(p.nickname)}** \`${clean(p.player_uid ?? p.account_id)}\``;
+function rosterFields(members) {
+  const players = (members || []).filter(p => !p.is_owner).slice(0, 8)
+    .sort((a, b) => Number(a.slot) - Number(b.slot));
+  return [1, 2].map(team => {
+    const list = players.filter(p => Number(p.team) === team);
+    return { name: `Time ${team}`, value: list.length ? list.map(playerLine).join('\n') : 'Nenhum jogador' };
+  });
+}
 
 function painel(m, members, icon) {
   const waiting = m.status === 'SALA_CRIADA';
   const players = (members || []).filter(p => !p.is_owner).slice(0, 8)
     .sort((a, b) => Number(a.slot) - Number(b.slot));
-  const line = p => `• ${p.platform === 'mobile' ? '📱' : p.platform === 'emulator' ? '🖥️' : '❔'} **#${clean(p.slot)} ${clean(p.nickname)}** \`${clean(p.player_uid)}\``;
-  const teams = [1, 2].map(team => {
-    const list = players.filter(p => Number(p.team) === team);
-    return `**Time ${team}**\n${list.length ? list.map(line).join('\n') : 'Nenhum jogador'}`;
-  });
+  const teams = rosterFields(players).map(team => `**${team.name}**\n${team.value}`);
   const unknown = players.filter(p => ![1, 2].includes(Number(p.team)));
-  if (unknown.length) teams.push('**Time não informado**\n' + unknown.map(line).join('\n'));
+  if (unknown.length) teams.push('**Time não informado**\n' + unknown.map(playerLine).join('\n'));
   const list = members == null ? 'Consultando jogadores…' : teams.join('\n');
   const delay = api.configuracaoDaSala(m).start_delay_minutes;
   const deadline = Math.floor((m.sala_pronta_em + delay * 60000) / 1000);
@@ -50,6 +61,22 @@ function painel(m, members, icon) {
     components[1].addComponents(new ButtonBuilder().setLabel('Link da Sala').setStyle(ButtonStyle.Link).setURL(m.nix_invite_link));
   }
   return { embeds: [embed], components, allowedMentions: { parse: [] } };
+}
+
+function inicioEmbed(m, members, icon, automatico = true) {
+  const embed = new EmbedBuilder().setColor(0xff0101).setTitle('🚀 Sala iniciada com sucesso!')
+    .setDescription(`A sala foi iniciada de forma ${automatico ? 'automática' : 'manual'}.\nIniciada em ${timestamp(m.em_andamento_em || Date.now())}`)
+    .addFields(rosterFields(members))
+    .setFooter({ text: `Sala ${m.nix_room_id} · Partida #${m.id}` });
+  if (icon) embed.setThumbnail(icon);
+  return { embeds: [embed], allowedMentions: { parse: [] } };
+}
+
+async function publicarInicio(client, id, automatico = true) {
+  const m = match(id);
+  if (!m?.thread_id) return null;
+  const channel = await client.channels.fetch(m.thread_id);
+  return channel.send(inicioEmbed(m, rosters.get(m.nix_session_id) || [], client.user.displayAvatarURL(), automatico));
 }
 
 async function publicar(client, id, members = null) {
@@ -79,18 +106,25 @@ async function publicar(client, id, members = null) {
 }
 
 function resultadoEmbed(m, data) {
-  const embed = new EmbedBuilder().setColor(0xff0101).setTitle('🏆 Resultado da Partida')
-    .setDescription(`Sala **${m.nix_room_id}** · Partida **#${m.id}**\n` +
-      (data.winner_team == null ? 'Vencedor não informado pela API.' : `**Time vencedor: ${clean(data.winner_team)}**`));
+  const embed = new EmbedBuilder().setColor(0xff0101).setTitle('🏆 Resultado completo da partida')
+    .setDescription(
+      `**Partida:** #${m.id}\n**Sessão Nix:** \`${clean(data.session_id ?? m.nix_session_id)}\`\n` +
+      `**Sala:** \`${clean(data.room_id ?? m.nix_room_id)}\`\n**Status:** ${clean(data.status)}\n` +
+      `**Modo:** ${clean(data.game_mode ?? api.configuracaoDaSala(m).config_type)}\n` +
+      `**Início:** ${timestamp(data.started_at ?? m.em_andamento_em)}\n**Fim:** ${timestamp(data.finished_at)}\n` +
+      (data.winner_team == null ? '**Vencedor:** não informado pela API' : `**Time vencedor: ${clean(data.winner_team)}** 🏆`)
+    );
   for (const team of (data.teams || []).slice(0, 2)) {
     embed.addFields({ name: `Time ${clean(team.team)}${team.is_winner ? ' 🏆' : ''}`, value:
       (team.players || []).slice(0, 4).map(p =>
-        `${clean(p.nickname)} · UID \`${clean(p.account_id)}\`\nAbates: **${p.kills ?? '—'}** · ${p.platform === 'mobile' ? '📱 Mobile' : p.platform === 'emulator' ? '🖥️ Emulador' : 'Dispositivo não informado'}${String(team.team_mvp_account_id) === String(p.account_id) ? ' · ⭐ MVP do time' : ''}`
-      ).join('\n') || 'Sem dados' });
+        `**${clean(p.nickname)}** · UID \`${clean(p.account_id)}\`${String(team.team_mvp_account_id) === String(p.account_id) ? ' · ⭐ MVP do time' : ''}\n` +
+        `${device(p.platform)} · Time ${clean(p.team ?? team.team)}${p.team_inferred == null ? '' : ` · time inferido: ${p.team_inferred ? 'sim' : 'não'}`}\n` +
+        `Abates: **${p.kills ?? '—'}** · Derrubados: **${p.knockdowns ?? '—'}** · Headshots: **${p.headshots ?? '—'}** · Revives: **${p.revives ?? '—'}** · Venceu: **${p.won == null ? '—' : p.won ? 'sim' : 'não'}**`
+      ).join('\n\n').slice(0, 1024) || 'Sem dados' });
   }
   if (data.match_mvp) embed.addFields({ name: '⭐ MVP da partida',
-    value: `${clean(data.match_mvp.nickname)} · ${data.match_mvp.kills ?? '—'} abates` });
-  embed.setFooter({ text: 'Resultado informado pela Nix. Confirme o vencedor no painel da partida.' });
+    value: `**${clean(data.match_mvp.nickname)}** · UID \`${clean(data.match_mvp.account_id)}\` · Time ${clean(data.match_mvp.team)} · ${data.match_mvp.kills ?? '—'} abates` });
+  embed.setFooter({ text: 'Dados oficiais retornados pela API Nix · agora confirme o vencedor abaixo.' });
   return { embeds: [embed], allowedMentions: { parse: [] } };
 }
 
@@ -108,6 +142,7 @@ async function atualizar(client, id) {
     if (m.status === 'SALA_CRIADA') {
       const data = await api.membros(session);
       if (!stillCurrent()) return false;
+      rosters.set(session, data.members || []);
       if (data.status === 'started') {
         await require('./partida').iniciarPartidaAutomatico(client, id, true);
       }
@@ -195,4 +230,4 @@ async function acao(interaction, id, action) {
   }
   return interaction.editReply({ content: 'O controle de expulsão foi removido.', components: [] });
 }
-module.exports = { painel, resultadoEmbed, publicar, atualizar, varrer, acao };
+module.exports = { painel, inicioEmbed, resultadoEmbed, publicar, publicarInicio, atualizar, varrer, acao };

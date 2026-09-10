@@ -53,10 +53,19 @@ test('rotas autenticadas, uid em string e tratamento de 429', async () => {
   } finally { global.fetch=old; }
 });
 test('resultado mantém dados reais e não inventa placar', () => {
-  const json=JSON.stringify(ui.resultadoEmbed(m,{winner_team:2,teams:[{team:2,is_winner:true,
-    players:[{nickname:'Vencedor',account_id:123,kills:5,platform:'mobile'}]}]}));
+  const json=JSON.stringify(ui.resultadoEmbed(m,{status:'finalizada',session_id:'session',room_id:'123',
+    started_at:'2026-09-09T20:00:00Z',finished_at:'2026-09-09T20:10:00Z',winner_team:2,
+    teams:[{team:2,is_winner:true,players:[{nickname:'Vencedor',account_id:123,kills:5,
+      knockdowns:4,headshots:3,revives:2,won:true,team_inferred:false,platform:'mobile'}]}]}));
   assert.match(json,/Time vencedor: 2/); assert.match(json,/Vencedor/);
-  assert.match(json,/5/); assert.doesNotMatch(json,/Placar/);
+  assert.match(json,/Derrubados/); assert.match(json,/Headshots/); assert.match(json,/Revives/);
+  assert.match(json,/session/); assert.doesNotMatch(json,/Placar/);
+});
+test('embed de início mostra times, slot, dispositivo e horário', () => {
+  const json=JSON.stringify(ui.inicioEmbed({...m,status:'EM_ANDAMENTO',em_andamento_em:Date.now()},[player],null,true));
+  assert.match(json,/Sala iniciada com sucesso/); assert.match(json,/automática/);
+  assert.match(json,/Time 1/); assert.match(json,/Time 2/); assert.match(json,/#5/); assert.match(json,/📱/);
+  assert.match(json,/<t:/);
 });
 test('polling final publica uma vez e encerra consultas', async () => {
   m.status='EM_ANDAMENTO'; m.em_andamento_em=Date.now();

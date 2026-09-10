@@ -170,8 +170,9 @@ function painel(m, { bannerUrl = null, client = null } = {}) {
       `${m.go_p2 ? '✅' : '⏳'} <@${m.p2}> · ${m.go_p2 ? 'pronto' : 'aguardando'}`
     ) : null,
     m.status === 'EM_ANDAMENTO' && !confirmandoResultado ? ui.nota(
-      `🕹️ O resultado poderá ser selecionado assim que a sala confirmar o fim da partida, ` +
-      `ou em até ${cfg.resultadoLiberaSegundos}s.`
+      m.nix_session_id
+        ? '🕹️ O resultado será liberado somente quando a API Nix confirmar que a partida terminou.'
+        : `🕹️ O resultado poderá ser selecionado quando a sala confirmar o fim ou em até ${cfg.resultadoLiberaSegundos}s.`
     ) : null,
     confirmandoResultado ? ui.divisor() : null,
     confirmandoResultado ? ui.secao('🏁 QUEM VENCEU?') : null,
@@ -727,18 +728,8 @@ async function iniciarPartida(interaction, matchId) {
   db.prepare('UPDATE matches SET em_andamento_em = ? WHERE id = ?').run(Date.now(), matchId);
   await require('./nixPainel').publicar(interaction.client, matchId).catch(() => {});
 
-  const bannerIniciadaManual = banners.obterStatus('iniciada');
-  await interaction.editReply(ui.msg(ui.bloco(cfg.COR.primaria,
-    bannerIniciadaManual ? ui.imagem(bannerIniciadaManual.url) : null,
-    ui.titulo('🔴 PARTIDA INICIADA'),
-    ui.nota(`Partida #${matchId} · iniciada por ${interaction.user}`),
-    ui.divisor(),
-    ui.txt(
-      'Boa sorte!\n\n' +
-      '🏁 Quando acabar, **um jogador seleciona quem venceu no painel da partida** e o adversário confirma. ' +
-      'Se houver qualquer problema, use **CHAMAR SUPORTE**.'
-    ),
-  ), bannerIniciadaManual ? { files: [{ attachment: bannerIniciadaManual.caminho, name: bannerIniciadaManual.nome }] } : {}));
+  await require('./nixPainel').publicarInicio(interaction.client, matchId, false).catch(() => {});
+  await interaction.editReply('✅ Sala iniciada pela API Nix.');
 
   // Fica no ticket durante a partida como um SOS permanente para os jogadores.
   await interaction.channel.send(ui.msg(painelSuporte(get(matchId)))).catch(() => {});
@@ -811,18 +802,7 @@ async function iniciarPartidaAutomatico(client, matchId, confirmadoPelaApi = fal
       await canal.messages.delete(m.go_msg_id).catch(() => {});
     }
 
-    const bannerIniciadaAuto = banners.obterStatus('iniciada');
-    await canal.send(ui.msg(ui.bloco(cfg.COR.primaria,
-      bannerIniciadaAuto ? ui.imagem(bannerIniciadaAuto.url) : null,
-      ui.titulo('🔴 PARTIDA INICIADA'),
-      ui.nota(`Partida #${matchId} · sala confirmada automaticamente`),
-      ui.divisor(),
-      ui.txt(
-        'Boa sorte!\n\n' +
-        '🏁 Quando acabar, **um jogador seleciona quem venceu no painel da partida** e o adversário confirma. ' +
-        'Se houver qualquer problema, use **CHAMAR SUPORTE**.'
-      ),
-    ), bannerIniciadaAuto ? { files: [{ attachment: bannerIniciadaAuto.caminho, name: bannerIniciadaAuto.nome }] } : {})).catch(() => {});
+    await require('./nixPainel').publicarInicio(client, matchId, true).catch(() => {});
 
     // Fica no ticket durante a partida como um SOS permanente para os jogadores.
     await canal.send(ui.msg(painelSuporte(get(matchId)))).catch(() => {});
@@ -888,6 +868,7 @@ async function liberarResultado(client, matchId) {
 async function resolverResultadoAutomatico(client) {
   const vencidas = db.prepare(
     `SELECT id FROM matches WHERE status = 'EM_ANDAMENTO' AND pronto_pra_resultado = 0
+       AND nix_session_id IS NULL
        AND em_andamento_em IS NOT NULL AND em_andamento_em + ? < ?`
   ).all(cfg.resultadoLiberaSegundos * 1000, Date.now());
 
@@ -1583,18 +1564,14 @@ async function aceitarRevanche(interaction, proposalId) {
     await interaction.channel.send(ui.msg(ui.bloco(cfg.COR.aviso,
       ui.titulo('💳 SALDO INSUFICIENTE PARA A REVANCHE'),
       ui.txt(
-        `${faltando.map((id) => `<@${id}>`).join(' e ')} não tem saldo suficiente. ` +
-        'Abri um canal de depósito para cada jogador pendente.'
+        `${faltando.map((id) => `<@${id}>`).join(' e ')} não tem saldo suficiente.\n\n` +
+        'Cada jogador pendente deve clicar no botão abaixo. O PIX será mostrado de forma privada, apenas para quem clicou.'
       ),
       ui.nota(`O pagamento precisa cair em ${cfg.pagamentoMinutos} minutos para a revanche começar.`),
+      ui.linhaBotoes(
+        ui.botao(`match:pay:${m.id}`, 'PAGAR MINHA REVANCHE', { estilo: ui.ESTILO.Success, emoji: '💳' }),
+      ),
     )));
-
-    const carteira = require('./carteira');
-    for (const jogadorId of faltando) {
-      await carteira.criarCobrancaPartidaAutomatica(interaction.client, m, jogadorId).catch((e) => {
-        console.error(`[revanche #${m.id}] falha ao abrir depósito para ${jogadorId}:`, e.message);
-      });
-    }
   }
 
   await avisarNoPv(interaction.client, m, interaction.channel);
