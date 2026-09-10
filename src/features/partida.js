@@ -273,9 +273,6 @@ function botoes(m, client) {
   if (PODE_CANCELAR.includes(m.status)) {
     linha2.push(ui.botao(`match:cancel:${m.id}`, 'CANCELAR', { estilo: ui.ESTILO.Danger, emoji: '🚫' }));
   }
-  if (confirmandoResultado && !['DISPUTA', 'SS_SOLICITADO', 'REVISAO'].includes(m.status)) {
-    linha2.push(ui.botao(`match:support:${m.id}`, 'CHAMAR SUPORTE', { estilo: ui.ESTILO.Danger, emoji: '🆘' }));
-  }
 
   // Linha sem botão é rejeitada pelo Discord.
   return [
@@ -391,7 +388,7 @@ const comoFuncionaBloco = (m) => ui.bloco(cfg.COR.neutro,
   ),
   ui.divisor(),
   ui.txt(
-    '🆘 **CHAMAR SUPORTE** funciona como SOS em qualquer fase ativa da partida.\n' +
+    '🆘 **CHAMAR SUPORTE** é liberado quando a partida terminar.\n' +
     '🎥 Se o caso precisar de VAR, somente a staff poderá encaminhá-lo para análise.\n' +
     '🔒 Depois das regras aceitas, **só a staff pode anular**.'
   ),
@@ -870,15 +867,21 @@ async function liberarResultado(client, matchId) {
     await thread.send(ui.msg([
       ui.bloco(cfg.COR.primaria,
         banner ? ui.imagem(banner.url) : null,
-        ui.titulo('🏁 PARTIDA FINALIZADA'),
+        ui.titulo('🏁 SELECIONE O VENCEDOR'),
         ui.divisor(),
-        ui.txt('A sala confirmou o fim da partida. Selecione quem venceu no menu abaixo.'),
+        ui.txt('A partida terminou. Selecione abaixo o jogador que venceu.'),
       ),
       seletorVencedor(atualizado, client),
+    ], banner ? { files: [{ attachment: banner.caminho, name: banner.nome }] } : {}));
+
+    await thread.send(ui.msg(ui.bloco(cfg.COR.aviso,
+      ui.titulo('🆘 PRECISA DE AJUDA?'),
+      ui.divisor(),
+      ui.txt('Se houver qualquer problema com o resultado ou com a partida, chame a equipe.'),
       ui.linhaBotoes(
         ui.botao(`match:support:${matchId}`, 'CHAMAR SUPORTE', { estilo: ui.ESTILO.Danger, emoji: '🆘' }),
       ),
-    ], banner ? { files: [{ attachment: banner.caminho, name: banner.nome }] } : {}));
+    )));
   } catch (e) {
     console.error(`[partida #${matchId}] falha ao enviar aviso de resultado liberado:`, e.message);
   }
