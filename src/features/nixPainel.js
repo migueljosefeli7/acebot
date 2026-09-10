@@ -66,12 +66,26 @@ function inicioEmbed(m, members, icon, automatico = true) {
   const embed = new EmbedBuilder().setColor(0xff0101).setTitle('🚀 Sala iniciada com sucesso!')
     .setDescription(`A sala foi iniciada de forma ${automatico ? 'automática' : 'manual'}.\nIniciada em ${timestamp(m.em_andamento_em || Date.now())}`)
     .addFields(rosterFields(members))
-    .addFields({ name: '🔄 Recriar sala', value: 'Quem clicar em **Recriar sala** pagará **R$ 0,50**. A sala atual será ignorada e uma nova será criada automaticamente.' })
     .setFooter({ text: `Sala ${m.nix_room_id} · Partida #${m.id}` });
   if (icon) embed.setThumbnail(icon);
+  return { embeds: [embed], allowedMentions: { parse: [] } };
+}
+
+function recriacaoEmbed(m) {
+  const embed = new EmbedBuilder().setColor(0xff0101).setTitle('⚠️ Quebra de regra durante a partida')
+    .setDescription(
+      'Se acontecer alguma quebra de regra, os jogadores podem conversar e escolher uma destas soluções:\n\n' +
+      '• **Entregar o round** para o lado prejudicado pela regra quebrada; ou\n' +
+      '• **Recriar a sala** e começar novamente.\n\n' +
+      'Ao clicar em **Recriar sala**, serão cobrados **R$ 0,50** do jogador que solicitou. A sala atual será ignorada e outra será criada automaticamente.'
+    )
+    .setFooter({ text: `Partida #${m.id}` });
   return {
     embeds: [embed],
-    components: [row(button(`match:recriar:${m.id}`, 'Recriar sala · R$ 0,50', ButtonStyle.Primary))],
+    components: [row(
+      button(`match:recriar:${m.id}`, 'Recriar sala · R$ 0,50', ButtonStyle.Primary),
+      new ButtonBuilder().setLabel('Regras gerais').setStyle(ButtonStyle.Link).setURL('https://discord.com/channels/1541905325895065671/1541922210028064798'),
+    )],
     allowedMentions: { parse: [] },
   };
 }
@@ -80,7 +94,9 @@ async function publicarInicio(client, id, automatico = true) {
   const m = match(id);
   if (!m?.thread_id) return null;
   const channel = await client.channels.fetch(m.thread_id);
-  return channel.send(inicioEmbed(m, rosters.get(m.nix_session_id) || [], client.user.displayAvatarURL(), automatico));
+  const inicio = await channel.send(inicioEmbed(m, rosters.get(m.nix_session_id) || [], client.user.displayAvatarURL(), automatico));
+  await channel.send(recriacaoEmbed(m));
+  return inicio;
 }
 
 async function publicar(client, id, members = null) {
@@ -259,4 +275,4 @@ async function acao(interaction, id, action) {
   }
   return interaction.editReply({ content: 'O controle de expulsão foi removido.', components: [] });
 }
-module.exports = { painel, inicioEmbed, resultadoEmbed, publicar, publicarInicio, atualizar, varrer, acao };
+module.exports = { painel, inicioEmbed, recriacaoEmbed, resultadoEmbed, publicar, publicarInicio, atualizar, varrer, acao };
