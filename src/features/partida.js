@@ -2106,15 +2106,6 @@ async function finalizarPartida(client, matchId, vencedorId, motivo) {
         '💡 Para receber em dinheiro, peça um **saque** no painel de saldo.',
         ui.botao('wallet:profile', 'MEU PERFIL', { emoji: '👤' }),
       ),
-      ui.divisor(),
-      ui.secao('🔁 Querem jogar de novo?'),
-      ui.comBotao(
-        'Qualquer um dos dois pode propor uma revanche. Você informa o novo valor e o adversário decide.',
-        ui.botao(`match:rematch:${matchId}`, 'PEDIR REVANCHE', {
-          estilo: ui.ESTILO.Primary, emoji: '🔁',
-        }),
-      ),
-      ui.nota('Se aceitarem, a nova partida começa neste mesmo canal.'),
     ), bannerFinalizada ? { files: [{ attachment: bannerFinalizada.caminho, name: bannerFinalizada.nome }] } : {}));
   }
 
@@ -2122,6 +2113,7 @@ async function finalizarPartida(client, matchId, vencedorId, motivo) {
   // e manda por DM convidando a postar nas redes. Nunca pode derrubar a
   // finalização — já mexemos com dinheiro, um erro aqui é só cosmético.
   await enviarBannerVencedor(client, m, vencedorId, thread);
+  await enviarConviteRevanche(thread, matchId);
   await avisarSaldoLiberado(client, vencedorId, premio(m));
 
   // Pontos de ranqueada: vencedor sobe, perdedor desce (nunca abaixo de zero).
@@ -2144,6 +2136,22 @@ async function finalizarPartida(client, matchId, vencedorId, motivo) {
   // Dá tempo para os jogadores combinarem uma revanche. Uma proposta pendente
   // ou uma nova partida ativa impede o fechamento automático deste canal.
   if (thread) await fecharTicket(thread, matchId, 60);
+}
+
+/** Publicado separadamente e somente depois da arte do vencedor. */
+async function enviarConviteRevanche(thread, matchId) {
+  if (!thread) return;
+  await thread.send(ui.msg(ui.bloco(cfg.COR.primaria,
+    ui.titulo('🔁 QUEREM JOGAR DE NOVO?'),
+    ui.divisor(),
+    ui.txt('Qualquer um dos dois pode propor uma revanche. Você informa o novo valor e o adversário decide.'),
+    ui.linhaBotoes(
+      ui.botao(`match:rematch:${matchId}`, 'PEDIR REVANCHE', {
+        estilo: ui.ESTILO.Primary, emoji: '🔁',
+      }),
+    ),
+    ui.nota('Se aceitarem, a nova partida começa neste mesmo canal.'),
+  ))).catch((e) => console.error(`[partida #${matchId}] falha ao enviar revanche:`, e.message));
 }
 
 /**
@@ -2223,21 +2231,6 @@ async function pontuarPartida(client, m, vencedorId, perdedorId, thread, motivo 
       cfg.pontosVitoria, `Vitória na partida #${m.id}`, `match:${m.id}`);
     const rP = await elo.registrar(client, m.guild_id, perdedorId,
       -cfg.pontosDerrota, `Derrota na partida #${m.id}`, `match:${m.id}`);
-
-    if (thread) {
-      await thread.send(ui.msg(ui.bloco(rV.eloDepois.cor,
-        ui.titulo('🎖️ PONTOS DA PARTIDA'),
-        ui.divisor(),
-        ui.txt(
-          `🥇 <@${vencedorId}> **+${rV.delta}** → ${rV.eloDepois.emoji} ${rV.eloDepois.nome} · \`${rV.depois} pts\`\n` +
-          `💀 <@${perdedorId}> **${rP.delta}** → ${rP.eloDepois.emoji} ${rP.eloDepois.nome} · \`${rP.depois} pts\``
-        ),
-      )));
-
-      for (const [userId, r] of [[vencedorId, rV], [perdedorId, rP]]) {
-        if (r.subiu || r.caiu) await thread.send(ui.msg(elo.painelPromocao(userId, r)));
-      }
-    }
 
     await ranking.atualizarTudo(client, m.guild_id);
 
