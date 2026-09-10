@@ -16,7 +16,6 @@ const match = (id) => require('./partida').get(id);
 const row = (...buttons) => new ActionRowBuilder().addComponents(buttons);
 const button = (id, label, style, disabled = false) => new ButtonBuilder()
   .setCustomId(id).setLabel(label).setStyle(style).setDisabled(disabled);
-const device = (platform) => platform === 'mobile' ? '📱 Mobile' : platform === 'emulator' ? '🖥️ PC/Emulador' : '❔ Não informado';
 const timestamp = (value) => {
   if (!value) return '—';
   const millis = typeof value === 'number' ? (value < 1e12 ? value * 1000 : value) : Date.parse(value);
@@ -110,26 +109,51 @@ async function publicar(client, id, members = null) {
   } finally { publishing.delete(key); }
 }
 
+const firstStat = (source, keys) => {
+  for (const key of keys) if (source?.[key] != null) return source[key];
+  return '—';
+};
+function roundsDoTime(data, team) {
+  const teamData = (data.teams || []).find(t => Number(t.team) === team) || {};
+  const direct = firstStat(teamData, ['rounds_won', 'round_wins', 'rounds', 'score']);
+  if (direct !== '—' && typeof direct !== 'object') return direct;
+  for (const source of [data.rounds, data.round_score, data.score, data.team_scores]) {
+    if (Array.isArray(source)) {
+      const found = source.find(item => Number(item?.team) === team);
+      if (found) return firstStat(found, ['rounds_won', 'round_wins', 'rounds', 'score', 'wins']);
+      if (source[team - 1] != null && typeof source[team - 1] !== 'object') return source[team - 1];
+    } else if (source && typeof source === 'object') {
+      const value = source[team] ?? source[`team_${team}`] ?? source[`team${team}`];
+      if (value != null) return typeof value === 'object'
+        ? firstStat(value, ['rounds_won', 'round_wins', 'rounds', 'score', 'wins']) : value;
+    }
+  }
+  return '—';
+}
+const statsLine = (p) =>
+  `\`KILL ${String(firstStat(p, ['kills', 'kill'])).padStart(3)}\`  ` +
+  `\`DEAD ${String(firstStat(p, ['deaths', 'dead', 'deads'])).padStart(3)}\`  ` +
+  `\`HS ${String(firstStat(p, ['headshots', 'hs'])).padStart(3)}\`  ` +
+  `\`DANO ${String(firstStat(p, ['damage', 'damage_dealt', 'dano'])).padStart(4)}\``;
+
 function resultadoEmbed(m, data) {
-  const embed = new EmbedBuilder().setColor(0xff0101).setTitle('🏆 Resultado completo da partida')
+  const round1 = roundsDoTime(data, 1);
+  const round2 = roundsDoTime(data, 2);
+  const vencedor = data.winner_team == null ? 'Vencedor não identificado' : `Time ${clean(data.winner_team)} venceu`;
+  const embed = new EmbedBuilder().setColor(0xff0101).setTitle('🏆 Resultado da Partida')
     .setDescription(
-      `**Partida:** #${m.id}\n**Sessão Nix:** \`${clean(data.session_id ?? m.nix_session_id)}\`\n` +
-      `**Sala:** \`${clean(data.room_id ?? m.nix_room_id)}\`\n**Status:** ${clean(data.status)}\n` +
-      `**Modo:** ${clean(data.game_mode ?? api.configuracaoDaSala(m).config_type)}\n` +
-      `**Início:** ${timestamp(data.started_at ?? m.em_andamento_em)}\n**Fim:** ${timestamp(data.finished_at)}\n` +
-      (data.winner_team == null ? '**Vencedor:** não informado pela API' : `**Time vencedor: ${clean(data.winner_team)}** 🏆`)
+      `## ${vencedor} 🏆\n` +
+      `### Placar por rounds\n🔵 **Time 1  ${clean(round1)}  ×  ${clean(round2)}  Time 2** 🔴`
     );
   for (const team of (data.teams || []).slice(0, 2)) {
     embed.addFields({ name: `Time ${clean(team.team)}${team.is_winner ? ' 🏆' : ''}`, value:
       (team.players || []).slice(0, 4).map(p =>
-        `**${clean(p.nickname)}** · UID \`${clean(p.account_id)}\`${String(team.team_mvp_account_id) === String(p.account_id) ? ' · ⭐ MVP do time' : ''}\n` +
-        `${device(p.platform)} · Time ${clean(p.team ?? team.team)}${p.team_inferred == null ? '' : ` · time inferido: ${p.team_inferred ? 'sim' : 'não'}`}\n` +
-        `Abates: **${p.kills ?? '—'}** · Derrubados: **${p.knockdowns ?? '—'}** · Headshots: **${p.headshots ?? '—'}** · Revives: **${p.revives ?? '—'}** · Venceu: **${p.won == null ? '—' : p.won ? 'sim' : 'não'}**`
+        `${String(data.match_mvp?.account_id) === String(p.account_id) ? '⭐ ' : ''}**${clean(p.nickname)}**\n${statsLine(p)}`
       ).join('\n\n').slice(0, 1024) || 'Sem dados' });
   }
   if (data.match_mvp) embed.addFields({ name: '⭐ MVP da partida',
-    value: `**${clean(data.match_mvp.nickname)}** · UID \`${clean(data.match_mvp.account_id)}\` · Time ${clean(data.match_mvp.team)} · ${data.match_mvp.kills ?? '—'} abates` });
-  embed.setFooter({ text: 'Dados oficiais retornados pela API Nix · agora confirme o vencedor abaixo.' });
+    value: `**${clean(data.match_mvp.nickname)}** · Time ${clean(data.match_mvp.team)} · **${firstStat(data.match_mvp, ['kills', 'kill'])} KILL**` });
+  embed.setFooter({ text: `Partida #${m.id} · confirme o vencedor abaixo.` });
   return { embeds: [embed], allowedMentions: { parse: [] } };
 }
 
@@ -174,7 +198,7 @@ async function atualizar(client, id) {
       db.prepare('UPDATE matches SET nix_poll_done = 1 WHERE id = ?').run(id);
       if (result.status === 'no_match') {
         const channel = await client.channels.fetch(m.thread_id);
-        await channel.send('⚠️ A Nix não detectou uma partida concluída nesta sala. Procurem o suporte para conferir.');
+        await channel.send('⚠️ Não foi possível detectar uma partida concluída nesta sala. Procurem o suporte para conferir.');
       }
     } else {
       const seconds = Math.max(pollMs / 1000, Number(result.poll_after_seconds) || 20);

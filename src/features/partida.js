@@ -171,7 +171,7 @@ function painel(m, { bannerUrl = null, client = null } = {}) {
     ) : null,
     m.status === 'EM_ANDAMENTO' && !confirmandoResultado ? ui.nota(
       m.nix_session_id
-        ? '🕹️ O resultado será liberado somente quando a API Nix confirmar que a partida terminou.'
+        ? '🕹️ O resultado será liberado automaticamente quando a partida terminar.'
         : `🕹️ O resultado poderá ser selecionado quando a sala confirmar o fim ou em até ${cfg.resultadoLiberaSegundos}s.`
     ) : null,
     confirmandoResultado ? ui.divisor() : null,
@@ -670,7 +670,7 @@ async function criarSalaPelaApi(client, matchId) {
       await thread.send(ui.msg(ui.bloco(cfg.COR.erro,
         ui.titulo('❌ NÃO CONSEGUI CRIAR A SALA'),
         ui.nota(`Partida #${matchId}`),
-        ui.txt(`A API Nix respondeu com erro.${dica}\nUse **TENTAR CRIAR SALA** no painel para repetir.`),
+        ui.txt(`O serviço de salas respondeu com erro.${dica}\nUse **TENTAR CRIAR SALA** no painel para repetir.`),
       ))).catch(() => {});
     }
     throw e;
@@ -740,7 +740,8 @@ async function iniciarPartida(interaction, matchId) {
   try {
     await iniciarSalaPelaApi(m);
   } catch (e) {
-    return interaction.editReply(`❌ Não consegui iniciar a sala pela API Nix: ${e.message}`);
+    console.error(`[partida #${matchId}] falha ao iniciar sala:`, e.message);
+    return interaction.editReply('❌ Não consegui iniciar a sala. Tente novamente em instantes.');
   }
 
   if (m.go_msg_id) {
@@ -752,7 +753,7 @@ async function iniciarPartida(interaction, matchId) {
   await require('./nixPainel').publicar(interaction.client, matchId).catch(() => {});
 
   await require('./nixPainel').publicarInicio(interaction.client, matchId, false).catch(() => {});
-  await interaction.editReply('✅ Sala iniciada pela API Nix.');
+  await interaction.editReply('✅ Sala iniciada com sucesso.');
 
   await atualizarPainel(interaction.client, matchId);
 }
@@ -1584,7 +1585,7 @@ async function chamarSuporte(interaction, matchId) {
     return nao(interaction, 'Você não é jogador', 'Só os jogadores dessa partida podem chamar suporte.');
   }
   if (!podeEscolherResultado(m)) {
-    return nao(interaction, 'Suporte ainda indisponível', 'O botão de suporte só é liberado quando a API Nix confirmar o final da partida.');
+    return nao(interaction, 'Suporte ainda indisponível', 'O botão de suporte só é liberado quando o final da partida for confirmado.');
   }
   if (['DISPUTA', 'SS_SOLICITADO', 'REVISAO'].includes(m.status)) {
     return nao(interaction, 'Suporte já chamado', 'A equipe já foi notificada e está acompanhando essa partida.');

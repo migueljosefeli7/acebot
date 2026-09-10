@@ -53,13 +53,12 @@ test('rotas autenticadas, uid em string e tratamento de 429', async () => {
   } finally { global.fetch=old; }
 });
 test('resultado mantém dados reais e não inventa placar', () => {
-  const json=JSON.stringify(ui.resultadoEmbed(m,{status:'finalizada',session_id:'session',room_id:'123',
-    started_at:'2026-09-09T20:00:00Z',finished_at:'2026-09-09T20:10:00Z',winner_team:2,
+  const json=JSON.stringify(ui.resultadoEmbed(m,{status:'finalizada',winner_team:2,score:{team_1:3,team_2:7},
     teams:[{team:2,is_winner:true,players:[{nickname:'Vencedor',account_id:123,kills:5,
-      knockdowns:4,headshots:3,revives:2,won:true,team_inferred:false,platform:'mobile'}]}]}));
-  assert.match(json,/Time vencedor: 2/); assert.match(json,/Vencedor/);
-  assert.match(json,/Derrubados/); assert.match(json,/Headshots/); assert.match(json,/Revives/);
-  assert.match(json,/session/); assert.doesNotMatch(json,/Placar/);
+      deaths:4,headshots:3,damage:1480}]}],match_mvp:{account_id:123,nickname:'Vencedor',team:2,kills:5}}));
+  assert.match(json,/Time 2 venceu/); assert.match(json,/Vencedor/); assert.match(json,/3/); assert.match(json,/7/);
+  assert.match(json,/KILL/); assert.match(json,/DEAD/); assert.match(json,/HS/); assert.match(json,/DANO/);
+  assert.match(json,/1480/); assert.match(json,/MVP da partida/); assert.doesNotMatch(json,/Nix/i);
 });
 test('embed de início mostra times, slot, dispositivo e horário', () => {
   const json=JSON.stringify(ui.inicioEmbed({...m,status:'EM_ANDAMENTO',em_andamento_em:Date.now()},[player],null,true));
