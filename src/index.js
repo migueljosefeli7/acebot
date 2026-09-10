@@ -180,6 +180,13 @@ setInterval(async () => {
     console.error('[resultado-automatico] varredura falhou:', e.message);
   }
 
+  try {
+    const corrigidos = await partida.sincronizarNomesTopicos(client);
+    if (corrigidos) console.log(`🏷️ ${corrigidos} nome(s) de tópico sincronizado(s).`);
+  } catch (e) {
+    console.error('[tópicos] sincronização de nomes falhou:', e.message);
+  }
+
   // Ranking diario/semanal/mensal: cada chamada so posta de verdade quando a
   // janela correspondente ja virou (checagem fica dentro de postarAutomatico).
   if (cfg.guildId) {

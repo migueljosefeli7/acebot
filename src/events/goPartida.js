@@ -15,7 +15,8 @@ module.exports = async function onGoPartida(message) {
     const m = partida.getByThread(message.channel.id);
     if (!m || m.status !== 'SALA_CRIADA') return;
 
-    await partida.registrarGo(message.client, m.id, message.author.id);
+    const registrado = await partida.registrarGo(message.client, m.id, message.author.id);
+    if (registrado) await message.react('1542020930262401075').catch(() => {});
   } catch (e) {
     console.error('[go-partida]', e.message);
   }

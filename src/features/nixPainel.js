@@ -67,9 +67,14 @@ function inicioEmbed(m, members, icon, automatico = true) {
   const embed = new EmbedBuilder().setColor(0xff0101).setTitle('🚀 Sala iniciada com sucesso!')
     .setDescription(`A sala foi iniciada de forma ${automatico ? 'automática' : 'manual'}.\nIniciada em ${timestamp(m.em_andamento_em || Date.now())}`)
     .addFields(rosterFields(members))
+    .addFields({ name: '🔄 Recriar sala', value: 'Quem clicar em **Recriar sala** pagará **R$ 0,50**. A sala atual será ignorada e uma nova será criada automaticamente.' })
     .setFooter({ text: `Sala ${m.nix_room_id} · Partida #${m.id}` });
   if (icon) embed.setThumbnail(icon);
-  return { embeds: [embed], allowedMentions: { parse: [] } };
+  return {
+    embeds: [embed],
+    components: [row(button(`match:recriar:${m.id}`, 'Recriar sala · R$ 0,50', ButtonStyle.Primary))],
+    allowedMentions: { parse: [] },
+  };
 }
 
 async function publicarInicio(client, id, automatico = true) {

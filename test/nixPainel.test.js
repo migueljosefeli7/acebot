@@ -66,6 +66,8 @@ test('embed de início mostra times, slot, dispositivo e horário', () => {
   assert.match(json,/Sala iniciada com sucesso/); assert.match(json,/automática/);
   assert.match(json,/Time 1/); assert.match(json,/Time 2/); assert.match(json,/#5/); assert.match(json,/📱/);
   assert.match(json,/<t:/);
+  assert.match(json,/Recriar sala/); assert.match(json,/R\$ 0,50/);
+  assert.doesNotMatch(json,/CHAMAR SUPORTE/);
 });
 test('polling final publica uma vez e encerra consultas', async () => {
   m.status='EM_ANDAMENTO'; m.em_andamento_em=Date.now();

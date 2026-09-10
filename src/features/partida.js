@@ -273,7 +273,7 @@ function botoes(m, client) {
   if (PODE_CANCELAR.includes(m.status)) {
     linha2.push(ui.botao(`match:cancel:${m.id}`, 'CANCELAR', { estilo: ui.ESTILO.Danger, emoji: '🚫' }));
   }
-  if (!['DISPUTA', 'SS_SOLICITADO', 'REVISAO'].includes(m.status)) {
+  if (confirmandoResultado && !['DISPUTA', 'SS_SOLICITADO', 'REVISAO'].includes(m.status)) {
     linha2.push(ui.botao(`match:support:${m.id}`, 'CHAMAR SUPORTE', { estilo: ui.ESTILO.Danger, emoji: '🆘' }));
   }
 
@@ -679,6 +679,29 @@ async function criarSalaPelaApi(client, matchId) {
   }
 }
 
+/** Repara nomes que não mudaram na hora por limite temporário da API do Discord. */
+async function sincronizarNomesTopicos(client) {
+  const partidas = db.prepare(
+    `SELECT * FROM matches WHERE thread_id IS NOT NULL
+     AND status NOT IN ('FINALIZADA', 'CANCELADA') ORDER BY id DESC LIMIT 50`
+  ).all();
+  let corrigidos = 0;
+  let tentativas = 0;
+  for (const m of partidas) {
+    const thread = client.channels.cache.get(m.thread_id)
+      || await client.channels.fetch(m.thread_id).catch(() => null);
+    if (!thread || thread.name === nomeTopicoPartida(m)) continue;
+    if (tentativas++ >= 10) break;
+    try {
+      await thread.setName(nomeTopicoPartida(m), `Sincronização do status da partida #${m.id}`);
+      corrigidos++;
+    } catch (e) {
+      console.warn(`[partida #${m.id}] nome do tópico ainda pendente:`, e.message);
+    }
+  }
+  return corrigidos;
+}
+
 async function iniciarSalaPelaApi(m) {
   if (!m.nix_session_id) throw new Error('A partida ainda não possui uma sala criada pela API Nix.');
   if (salasEmStart.has(m.id)) throw new Error('A sala já está sendo iniciada.');
@@ -730,9 +753,6 @@ async function iniciarPartida(interaction, matchId) {
 
   await require('./nixPainel').publicarInicio(interaction.client, matchId, false).catch(() => {});
   await interaction.editReply('✅ Sala iniciada pela API Nix.');
-
-  // Fica no ticket durante a partida como um SOS permanente para os jogadores.
-  await interaction.channel.send(ui.msg(painelSuporte(get(matchId)))).catch(() => {});
 
   await atualizarPainel(interaction.client, matchId);
 }
@@ -804,8 +824,6 @@ async function iniciarPartidaAutomatico(client, matchId, confirmadoPelaApi = fal
 
     await require('./nixPainel').publicarInicio(client, matchId, true).catch(() => {});
 
-    // Fica no ticket durante a partida como um SOS permanente para os jogadores.
-    await canal.send(ui.msg(painelSuporte(get(matchId)))).catch(() => {});
   }
 
   await atualizarPainel(client, matchId);
@@ -856,6 +874,9 @@ async function liberarResultado(client, matchId) {
         ui.txt('A sala confirmou o fim da partida. Selecione quem venceu no menu abaixo.'),
       ),
       seletorVencedor(atualizado, client),
+      ui.linhaBotoes(
+        ui.botao(`match:support:${matchId}`, 'CHAMAR SUPORTE', { estilo: ui.ESTILO.Danger, emoji: '🆘' }),
+      ),
     ], banner ? { files: [{ attachment: banner.caminho, name: banner.nome }] } : {}));
   } catch (e) {
     console.error(`[partida #${matchId}] falha ao enviar aviso de resultado liberado:`, e.message);
@@ -885,24 +906,8 @@ async function resolverResultadoAutomatico(client) {
 
 /* --------------------------------------------------------- QUEBRA DE REGRA */
 
-/** Cada jogador paga metade da taxa para refazer a sala. */
-const taxaRecriacao = () => Math.ceil(cfg.taxaPartida / 2);
-
-/** Bloco SOS fixo que fica no ticket durante a partida. */
-const painelSuporte = (m) => ui.bloco(cfg.COR.primaria,
-  ui.titulo('🆘 PRECISA DE AJUDA?'),
-  ui.nota(`Partida #${m.id}`),
-  ui.divisor(),
-  ui.txt(
-    'Deu algum problema com pagamento, regras, sala, resultado ou comportamento?\n\n' +
-    'Clique em **CHAMAR SUPORTE** para enviar um SOS à equipe. A staff entra no ticket ' +
-    'e, se for necessário analisar tela/replay, ela mesma encaminha o caso para o VAR.'
-  ),
-  ui.linhaBotoes(
-    ui.botao(`match:support:${m.id}`, 'CHAMAR SUPORTE', { estilo: ui.ESTILO.Danger, emoji: '🆘' }),
-  ),
-  ui.nota('O botão é para urgências da partida e pode ser usado em qualquer fase ativa.'),
-);
+/** A recriação imediata custa cinquenta centavos para quem a solicitar. */
+const taxaRecriacao = () => 50;
 
 const modalQuebra = (matchId) =>
   new ModalBuilder().setCustomId(`match:quebra_modal:${matchId}`).setTitle('Quebra de regra')
@@ -999,20 +1004,14 @@ async function registrarQuebra(interaction, matchId) {
 }
 
 /**
- * Refazer a sala: cada jogador paga metade da taxa do próprio saldo.
- * A partida só volta para AGUARDANDO SALA quando os dois pagarem.
+ * Refazer a sala: cobra R$ 0,50 de quem clicou, abandona a sessão atual e
+ * cria imediatamente outra sala para a mesma partida.
  */
 const cobrarRecriacao = db.transaction((matchId, userId) => {
   const m = get(matchId);
   if (!m || !ehJogador(m, userId)) return { erro: 'NAO_E_JOGADOR' };
   if (['FINALIZADA', 'CANCELADA'].includes(m.status)) return { erro: 'ENCERRADA' };
-  if (!['EM_ANDAMENTO', 'AGUARDANDO_RECRIACAO'].includes(m.status)) return { erro: 'FORA_DE_HORA' };
-
-  const denuncia = db.prepare('SELECT 1 FROM denuncias WHERE match_id = ? LIMIT 1').get(matchId);
-  if (!denuncia) return { erro: 'SEM_DENUNCIA' };
-
-  const campo = m.p1 === userId ? 'recriar_p1' : 'recriar_p2';
-  if (m[campo]) return { erro: 'JA_PAGOU' };
+  if (m.status !== 'EM_ANDAMENTO') return { erro: 'FORA_DE_HORA' };
 
   const custo = taxaRecriacao();
   try {
@@ -1021,13 +1020,8 @@ const cobrarRecriacao = db.transaction((matchId, userId) => {
     return { erro: 'SEM_SALDO', saldo: wallet.getBalance(userId), custo };
   }
 
-  db.prepare(`UPDATE matches SET ${campo} = 1, status = 'AGUARDANDO_RECRIACAO' WHERE id = ?`).run(matchId);
-  const atual = get(matchId);
-  const ambos = atual.recriar_p1 && atual.recriar_p2;
-  const sessaoAnterior = atual.nix_session_id;
-
-  if (ambos) {
-    db.prepare(
+  const sessaoAnterior = m.nix_session_id;
+  db.prepare(
       `UPDATE matches SET status = 'AGUARDANDO_SALA', recriacoes = recriacoes + 1,
        recriar_p1 = 0, recriar_p2 = 0, claim_p1 = NULL, claim_p2 = NULL,
        proof_p1 = NULL, proof_p2 = NULL, ss_por = NULL, ss_nicks = NULL,
@@ -1038,9 +1032,8 @@ const cobrarRecriacao = db.transaction((matchId, userId) => {
        pronto_pra_resultado = 0,
        nix_room_id = NULL, nix_room_password = NULL, nix_invite_link = NULL
        WHERE id = ?`
-    ).run(matchId);
-  }
-  return { ok: true, ambos, custo, sessaoAnterior, match: get(matchId) };
+  ).run(matchId);
+  return { ok: true, custo, sessaoAnterior, match: get(matchId) };
 });
 
 async function recriarSala(interaction, matchId) {
@@ -1049,8 +1042,6 @@ async function recriarSala(interaction, matchId) {
   if (r.erro === 'NAO_E_JOGADOR') return nao(interaction, 'Você não é jogador', 'Só os jogadores podem refazer a sala.');
   if (r.erro === 'ENCERRADA') return nao(interaction, 'Partida encerrada', 'Essa partida já foi finalizada ou cancelada.');
   if (r.erro === 'FORA_DE_HORA') return nao(interaction, 'Fora de hora', 'A sala não pode ser recriada no estado atual da partida.');
-  if (r.erro === 'SEM_DENUNCIA') return nao(interaction, 'Sem quebra registrada', 'Relate primeiro a quebra de regra antes de pedir uma nova sala.');
-  if (r.erro === 'JA_PAGOU') return nao(interaction, 'Você já pagou', 'Aguardando o adversário pagar a parte dele.');
   if (r.erro === 'SEM_SALDO') {
     return interaction.reply(ui.msg(ui.bloco(cfg.COR.erro,
       ui.titulo('❌ SALDO INSUFICIENTE'),
@@ -1061,29 +1052,20 @@ async function recriarSala(interaction, matchId) {
   if (!r.ok) return nao(interaction, 'Não consegui processar', 'Tente de novo em instantes.');
 
   const m = r.match;
-  const adv = oponente(m, interaction.user.id);
-
-  await interaction.reply(ui.msg(ui.bloco(r.ambos ? cfg.COR.sucesso : cfg.COR.aviso,
-    ui.titulo(r.ambos ? '🔄 SALA LIBERADA PARA REFAZER' : '💸 TAXA PAGA'),
+  await interaction.update(ui.msg(ui.bloco(cfg.COR.sucesso,
+    ui.titulo('🔄 NOVA SALA SOLICITADA'),
     ui.nota(`Partida #${matchId}`),
     ui.divisor(),
-    r.ambos
-      ? ui.txt(
-          `Os dois pagaram **${money.fmt(r.custo)}**. Uma nova sala será criada automaticamente.\n\n` +
-          'As escolhas de vencedor anteriores foram zeradas.'
-        )
-      : ui.txt(`<@${interaction.user.id}> pagou **${money.fmt(r.custo)}**.\n<@${adv}>, falta você para refazer a sala.`),
+    ui.txt(`<@${interaction.user.id}> pagou **${money.fmt(r.custo)}**. A sala anterior será ignorada e uma nova sala será criada automaticamente.`),
     ui.tabela([['Salas refeitas', String(m.recriacoes)]]),
   )));
 
-  if (r.ambos) {
-    if (r.sessaoAnterior) {
-      await nixSalas.liberarSala(r.sessaoAnterior).catch((e) => {
-        console.error(`[partida #${matchId}] falha ao liberar sala anterior:`, e.message);
-      });
-    }
-    criarSalaPelaApi(interaction.client, matchId).catch(() => {});
+  if (r.sessaoAnterior) {
+    await nixSalas.liberarSala(r.sessaoAnterior).catch((e) => {
+      console.error(`[partida #${matchId}] falha ao liberar sala anterior:`, e.message);
+    });
   }
+  criarSalaPelaApi(interaction.client, matchId).catch(() => {});
 
   await atualizarPainel(interaction.client, matchId);
 }
@@ -1600,6 +1582,9 @@ async function chamarSuporte(interaction, matchId) {
   if (!m) return nao(interaction, 'Partida não encontrada', 'Esse ticket não corresponde a nenhuma partida.');
   if (!ehJogador(m, interaction.user.id)) {
     return nao(interaction, 'Você não é jogador', 'Só os jogadores dessa partida podem chamar suporte.');
+  }
+  if (!podeEscolherResultado(m)) {
+    return nao(interaction, 'Suporte ainda indisponível', 'O botão de suporte só é liberado quando a API Nix confirmar o final da partida.');
   }
   if (['DISPUTA', 'SS_SOLICITADO', 'REVISAO'].includes(m.status)) {
     return nao(interaction, 'Suporte já chamado', 'A equipe já foi notificada e está acompanhando essa partida.');
@@ -2468,6 +2453,6 @@ module.exports = {
   vencedorPelosClaims, recuperarResultadosPendentes, resolverAbandonos,
   selecionarVencedor, confirmarVencedor, cancelarEscolhaVencedor, chamarSuporte, chamarVarStaff,
   modalRevanche, abrirModalRevanche, proporRevanche, aceitarRevanche, recusarRevanche,
-  abrirDisputa, painelSuporte,
+  abrirDisputa, sincronizarNomesTopicos,
   abrirQuebraDeRegra, registrarQuebra, recriarSala, taxaRecriacao, pedirRevisao, veredito, finalizarPartida, cancelarPartida, pedirCancelamento,
 };
