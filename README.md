@@ -329,6 +329,10 @@ titulos, divisores, tabelas alinhadas e botoes agrupados. O kit fica em
 
 ## Fluxo do ticket
 
+O nome de cada tópico acompanha automaticamente o status da própria partida
+(`PAGAMENTO`, `REGRAS`, `CRIANDO SALA`, `SALA CRIADA`, `EM ANDAMENTO`,
+`FINALIZADA`, entre outros), sem alterar os demais tópicos.
+
 ```
 fila (2 jogadores, mesmo modo de gelo)
   → ticket privado criado no canal de tickets

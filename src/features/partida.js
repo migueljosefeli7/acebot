@@ -44,6 +44,25 @@ const STATUS = {
   CANCELADA: { txt: '🚫 CANCELADA', cor: cfg.COR.neutro },
 };
 
+const STATUS_TOPICO = {
+  AGUARDANDO_PAGAMENTO: '💳 PAGAMENTO',
+  AGUARDANDO_REGRAS: '📝 REGRAS',
+  REGRA_PROPOSTA: '📝 REGRA PROPOSTA',
+  AGUARDANDO_SALA: '🎮 CRIANDO SALA',
+  SALA_CRIADA: '🕹️ SALA CRIADA',
+  EM_ANDAMENTO: '🔴 EM ANDAMENTO',
+  AGUARDANDO_RECRIACAO: '🔄 RECRIANDO SALA',
+  REVISAO: '⚖️ EM REVISÃO',
+  AGUARDANDO_RESULTADO: '⏳ CONFIRMANDO RESULTADO',
+  SS_SOLICITADO: '🎥 VAR SOLICITADO',
+  DISPUTA: '⚠️ EM DISPUTA',
+  FINALIZADA: '✅ FINALIZADA',
+  CANCELADA: '🚫 CANCELADA',
+};
+
+const nomeTopicoPartida = (m) =>
+  `${STATUS_TOPICO[m.status] || '⚔ PARTIDA'} · ${m.modalidade} · ${money.fmt(m.valor)} · #${m.id}`.slice(0, 100);
+
 // Cancelar so vale enquanto as regras nao foram aceitas. Depois disso a partida
 // esta valendo e so a staff pode anular.
 const PODE_CANCELAR = ['AGUARDANDO_PAGAMENTO', 'AGUARDANDO_REGRAS', 'REGRA_PROPOSTA'];
@@ -278,6 +297,13 @@ async function atualizarPainel(client, matchId) {
 
   try {
     const thread = await client.channels.fetch(m.thread_id);
+    const nomeTopico = nomeTopicoPartida(m);
+    if (thread.name !== nomeTopico) {
+      await thread.setName(nomeTopico, `Status da partida #${m.id}: ${m.status}`).catch((e) => {
+        console.warn(`[partida #${matchId}] falha ao renomear tópico:`, e.message);
+      });
+    }
+
     // O banner ja foi anexado quando o painel nasceu; reeditar nao precisa reenviar.
     const carga = mensagemPainel(m, { anexarBanner: false, client });
 
@@ -311,7 +337,7 @@ async function abrirTicket(client, matchId) {
   }
 
   const thread = await canal.threads.create({
-    name: `⚔ ${m.modalidade} · ${money.fmt(m.valor)} · #${m.id}`.slice(0, 100),
+    name: nomeTopicoPartida(m),
     autoArchiveDuration: 1440,
     type: ChannelType.PrivateThread,
     invitable: false,
