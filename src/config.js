@@ -12,10 +12,12 @@ module.exports = {
   // Fallback fixo: se faltar no .env, o bot ainda sobe apontado pro servidor certo.
   guildId: process.env.GUILD_ID || '1541905325895065671',
 
-  // Bot criador de salas: loga com token de conta de usuario (selfbot) e manda
-  // +cs 1/2/3 no ticket quando a partida entra em AGUARDANDO_SALA. Vazio = desligado.
-  salaBot: {
-    token: process.env.SALA_BOT_TOKEN || '',
+  // API Nix usada para criar e iniciar as salas 4v4.
+  nixSalas: {
+    apiKey: process.env.NIX_API_KEY || '',
+    baseUrl: (process.env.NIX_API_BASE_URL || 'https://salas.nixbot.vip').replace(/\/$/, ''),
+    startDelayMinutes: Math.min(10, Math.max(1, int(process.env.NIX_START_DELAY_MINUTES, 10))),
+    timeoutMs: Math.max(5_000, int(process.env.NIX_TIMEOUT_MS, 30_000)),
   },
 
   openaiApiKey: process.env.OPENAI_API_KEY,

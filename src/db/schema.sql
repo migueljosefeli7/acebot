@@ -109,6 +109,10 @@ CREATE TABLE IF NOT EXISTS matches (
   recriacoes   INTEGER NOT NULL DEFAULT 0,  -- quantas vezes a sala foi refeita
   recriar_p1   INTEGER NOT NULL DEFAULT 0,  -- ja pagou a taxa da recriacao atual
   recriar_p2   INTEGER NOT NULL DEFAULT 0,
+  nix_session_id TEXT,
+  nix_room_id TEXT,
+  nix_room_password TEXT,
+  nix_invite_link TEXT,
   created_at   INTEGER NOT NULL,
   finished_at  INTEGER
 );

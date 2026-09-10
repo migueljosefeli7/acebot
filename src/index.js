@@ -12,11 +12,9 @@ const onSugestao = require('./events/sugestao');
 const onCompletar = require('./events/completar');
 const onIaChat = require('./events/iaChat');
 const onGoPartida = require('./events/goPartida');
-const salaBotMirror = require('./events/salaBotMirror');
 const membros = require('./lib/membros');
 const ratelimit = require('./lib/ratelimit');
 const { iniciarWebhook } = require('./web/server');
-const salaBot = require('./bots/salaBot');
 const configPadrao = require('./lib/configPadrao');
 
 if (!cfg.token || !cfg.clientId) {
@@ -69,6 +67,10 @@ client.once(Events.ClientReady, async () => {
   console.log(`🤖 Online como ${client.user.tag}`);
   client.user.setActivity('apostas de Free Fire 🎮');
 
+  if (!cfg.nixSalas.apiKey) {
+    console.warn('⚠️ NIX_API_KEY não configurada — a criação automática de salas ficará indisponível.');
+  }
+
   // Canais/cargos fixos do servidor — grava só o que ainda não está salvo no
   // banco, então nunca mais precisa rodar /config depois de um restart.
   const gravados = configPadrao.seed(cfg.guildId || configPadrao.GUILD_ID);
@@ -97,10 +99,16 @@ client.once(Events.ClientReady, async () => {
 
   // Também aplica a arte da modalidade aos tickets ativos que já existiam.
   const partidasAtivas = db.prepare(
-    "SELECT id FROM matches WHERE thread_id IS NOT NULL AND status NOT IN ('FINALIZADA', 'CANCELADA')"
+    "SELECT id, status FROM matches WHERE thread_id IS NOT NULL AND status NOT IN ('FINALIZADA', 'CANCELADA')"
   ).all();
   for (const m of partidasAtivas) await partida.atualizarPainel(client, m.id);
   if (partidasAtivas.length) console.log(`🖼️ ${partidasAtivas.length} painel(is) de partida sincronizado(s)`);
+
+  if (cfg.nixSalas.apiKey) {
+    for (const m of partidasAtivas.filter((item) => item.status === 'AGUARDANDO_SALA')) {
+      await partida.criarSalaPelaApi(client, m.id).catch(() => {});
+    }
+  }
 
   // Aquece o cache de membros uma vez: sem isso, a primeira partida do dia
   // pagaria o custo de baixar a lista inteira de membros.
@@ -114,8 +122,6 @@ client.on(Events.MessageCreate, onSugestao);
 client.on(Events.MessageCreate, onCompletar);
 client.on(Events.MessageCreate, onIaChat);
 client.on(Events.MessageCreate, onGoPartida);
-client.on(Events.MessageCreate, salaBotMirror.onMessageCreate);
-client.on(Events.MessageUpdate, salaBotMirror.onMessageUpdate);
 
 /* ------------------------------------------------- LIMPEZA DE PENDENCIAS */
 
@@ -196,4 +202,3 @@ for (const sinal of ['SIGINT', 'SIGTERM']) {
 
 iniciarWebhook(client);
 client.login(cfg.token);
-salaBot.iniciar();

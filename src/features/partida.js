@@ -13,9 +13,11 @@ const gc = require('../lib/guildconfig');
 const notificar = require('../lib/notificar');
 const banners = require('../lib/banners');
 const vencedorBanner = require('../lib/vencedorBanner');
-const salaBot = require('../bots/salaBot');
+const nixSalas = require('../lib/nixSalas');
 const fila = require('./fila');
-const emo = require('../lib/emojis');
+
+const salasEmCriacao = new Set();
+const salasEmStart = new Set();
 
 const get = (id) => db.prepare('SELECT * FROM matches WHERE id = ?').get(id);
 const getByThread = (threadId) => db.prepare('SELECT * FROM matches WHERE thread_id = ? ORDER BY id DESC LIMIT 1').get(threadId);
@@ -237,7 +239,7 @@ function botoes(m, client) {
     linha1.push(ui.botao(`match:pay:${m.id}`, 'PAGAR MINHA PARTIDA', { estilo: ui.ESTILO.Success, emoji: '💳' }));
   }
   if (m.status === 'AGUARDANDO_SALA') {
-    linha1.push(ui.botao(`match:room:${m.id}`, 'SALA CRIADA · INICIAR', { estilo: ui.ESTILO.Success, emoji: '🎮' }));
+    linha1.push(ui.botao(`match:room:${m.id}`, 'TENTAR CRIAR SALA', { estilo: ui.ESTILO.Success, emoji: '🎮' }));
   }
   if (m.status === 'SALA_CRIADA') {
     linha1.push(ui.botao(`match:room:${m.id}`, 'INICIAR AGORA', { estilo: ui.ESTILO.Success, emoji: '🎮' }));
@@ -321,10 +323,6 @@ async function abrirTicket(client, matchId) {
   await thread.members.add(m.p1).catch(() => {});
   await thread.members.add(m.p2).catch(() => {});
 
-  // Sem isso a conta do sala-bot (selfbot) nao enxerga a thread privada e o +cs nunca chega.
-  const salaBotId = salaBot.getUserId();
-  if (salaBotId) await thread.members.add(salaBotId).catch(() => {});
-
   const atualizado = get(matchId);
   const msgPainel = await thread.send(mensagemPainel(atualizado, { anexarBanner: true, client }));
   // Guarda o id para as proximas edicoes nao precisarem varrer as fixadas.
@@ -340,11 +338,9 @@ async function abrirTicket(client, matchId) {
     await cobrancaNoTicket(thread, atualizado);
   }
 
-  // Full UMP e XM8 com os dois já pagos: a partida nasce direto em
-  // AGUARDANDO_SALA (regras dispensadas), então precisa acionar o sala-bot
-  // aqui — não existe etapa de "aceitar regras" pra disparar isso desta vez.
+  // Modos que dispensam regras criam a sala assim que o ticket nasce pago.
   if (atualizado.status === 'AGUARDANDO_SALA') {
-    salaBot.enviarComandoSala(thread.id, atualizado).catch(() => {});
+    criarSalaPelaApi(client, atualizado.id).catch(() => {});
   }
 
   await avisarNoPv(client, get(matchId), thread);
@@ -428,7 +424,7 @@ const marcarPago = db.transaction((matchId, userId, viaSaldo) => {
   if (pagouTudo(atual) && atual.status === 'AGUARDANDO_PAGAMENTO') {
     // Revanche já reaproveita as regras combinadas, e Full UMP e XM8 já vem
     // acertado desde a fila — os dois pulam direto pra criação da sala (mesma
-    // etapa que aciona o sala-bot). Partida comum ainda combina regras.
+    // etapa que aciona a API Nix). Partida comum ainda combina regras.
     const pulaRegras = ehRevanche(matchId) || fila.ehFullUmpXm8(atual.gelo);
     if (pulaRegras && fila.ehFullUmpXm8(atual.gelo) && !atual.regras) {
       db.prepare("UPDATE matches SET regras = 'Full UMP e XM8' WHERE id = ?").run(matchId);
@@ -467,12 +463,9 @@ async function anunciarPagamento(client, r, userId, amount) {
         : ui.txt(`Ainda falta ${devendo(m).map((id) => `<@${id}>`).join(' e ')} pagar.`),
     )));
 
-    // Revanche e Full UMP e XM8 pulam regras — aciona o sala-bot na hora, igual
-    // confirmarRegras() faz pra partida comum. Sem isso o +cs nunca era enviado.
+    // Modos que pulam regras criam a sala quando o segundo pagamento cai.
     if (pagouTudo(m) && pulaRegras) {
-      const salaBotId = salaBot.getUserId();
-      if (salaBotId) await thread.members.add(salaBotId).catch(() => {});
-      salaBot.enviarComandoSala(thread.id, m).catch(() => {});
+      criarSalaPelaApi(client, m.id).catch(() => {});
     }
 
     // Partida comum: so agora, com os dois pagamentos confirmados, e que faz
@@ -597,16 +590,12 @@ async function confirmarRegras(interaction, matchId) {
     ui.divisor(),
     ui.secao('🎮 AGUARDANDO CRIAÇÃO DA SALA'),
     ui.txt(
-      'Criem a sala, mandem o código aqui e cliquem em `SALA CRIADA · INICIAR` ao começar.\n\n' +
+      'A sala será criada automaticamente pela API e os dados aparecerão neste ticket.\n\n' +
       '🔒 A partida **está valendo**: o botão de cancelar sumiu e só a staff pode anular.'
     ),
   )));
 
-  // Garante que a conta do sala-bot é membro da thread mesmo em tickets abertos
-  // antes dessa integração existir (não fazia parte de abrirTicket ainda).
-  const salaBotId = salaBot.getUserId();
-  if (salaBotId) await interaction.channel.members.add(salaBotId).catch(() => {});
-  salaBot.enviarComandoSala(interaction.channel.id, m).catch(() => {});
+  criarSalaPelaApi(interaction.client, matchId).catch(() => {});
 
   await atualizarPainel(interaction.client, matchId);
 }
@@ -630,6 +619,50 @@ async function recusarRegras(interaction, matchId) {
 
 /* ------------------------------------------------------------------ SALA/JOGO */
 
+async function criarSalaPelaApi(client, matchId) {
+  const m = get(matchId);
+  if (!m || m.status !== 'AGUARDANDO_SALA') return false;
+  if (m.nix_session_id || salasEmCriacao.has(matchId)) return false;
+
+  salasEmCriacao.add(matchId);
+  try {
+    const sala = await nixSalas.criarSala(m);
+    db.prepare(
+      `UPDATE matches SET nix_session_id = ?, nix_room_id = ?, nix_room_password = ?,
+       nix_invite_link = ? WHERE id = ? AND status = 'AGUARDANDO_SALA'`
+    ).run(sala.session_id, String(sala.room_id), sala.password, sala.invite_link || null, matchId);
+    await marcarSalaCriada(client, matchId, sala);
+    return true;
+  } catch (e) {
+    console.error(`[partida #${matchId}] falha ao criar sala na Nix:`, e.message);
+    const thread = m.thread_id ? await client.channels.fetch(m.thread_id).catch(() => null) : null;
+    if (thread) {
+      const dica = e.status === 429 && e.retryAfter
+        ? ` Tente novamente em ${e.retryAfter} segundos.`
+        : '';
+      await thread.send(ui.msg(ui.bloco(cfg.COR.erro,
+        ui.titulo('❌ NÃO CONSEGUI CRIAR A SALA'),
+        ui.nota(`Partida #${matchId}`),
+        ui.txt(`A API Nix respondeu com erro.${dica}\nUse **TENTAR CRIAR SALA** no painel para repetir.`),
+      ))).catch(() => {});
+    }
+    throw e;
+  } finally {
+    salasEmCriacao.delete(matchId);
+  }
+}
+
+async function iniciarSalaPelaApi(m) {
+  if (!m.nix_session_id) throw new Error('A partida ainda não possui uma sala criada pela API Nix.');
+  if (salasEmStart.has(m.id)) throw new Error('A sala já está sendo iniciada.');
+  salasEmStart.add(m.id);
+  try {
+    await nixSalas.iniciarSala(m.nix_session_id);
+  } finally {
+    salasEmStart.delete(m.id);
+  }
+}
+
 async function iniciarPartida(interaction, matchId) {
   const m = get(matchId);
   if (!m) return nao(interaction, 'Partida não encontrada', 'Esse ticket não corresponde a nenhuma partida.');
@@ -637,11 +670,27 @@ async function iniciarPartida(interaction, matchId) {
   if (!ehJogador(m, interaction.user.id) && !gc.hasRole(interaction.member, 'cargo_staff')) {
     return nao(interaction, 'Você não é jogador', 'Só os jogadores ou a staff podem iniciar.');
   }
-  // AGUARDANDO_SALA: ninguem clicou/detectou a sala ainda (fallback manual).
-  // SALA_CRIADA: a sala ja foi detectada e esta so esperando o +go — esse botao
-  // deixa pular a espera e comecar na hora.
+  // Em AGUARDANDO_SALA o botão repete uma criação que falhou.
+  // Em SALA_CRIADA ele inicia a sala imediatamente pela API.
   if (!['AGUARDANDO_SALA', 'SALA_CRIADA'].includes(m.status)) {
     return nao(interaction, 'Fora de hora', 'A partida não está aguardando a criação da sala.');
+  }
+
+  await interaction.deferReply();
+
+  if (m.status === 'AGUARDANDO_SALA') {
+    try {
+      const criada = await criarSalaPelaApi(interaction.client, matchId);
+      return interaction.editReply(criada ? '✅ Sala criada pela API.' : '⏳ A criação da sala já está em andamento.');
+    } catch {
+      return interaction.editReply('❌ Não consegui criar a sala. Confira o aviso enviado neste ticket.');
+    }
+  }
+
+  try {
+    await iniciarSalaPelaApi(m);
+  } catch (e) {
+    return interaction.editReply(`❌ Não consegui iniciar a sala pela API Nix: ${e.message}`);
   }
 
   if (m.go_msg_id) {
@@ -652,7 +701,7 @@ async function iniciarPartida(interaction, matchId) {
   db.prepare('UPDATE matches SET em_andamento_em = ? WHERE id = ?').run(Date.now(), matchId);
 
   const bannerIniciadaManual = banners.obterStatus('iniciada');
-  await interaction.reply(ui.msg(ui.bloco(cfg.COR.primaria,
+  await interaction.editReply(ui.msg(ui.bloco(cfg.COR.primaria,
     bannerIniciadaManual ? ui.imagem(bannerIniciadaManual.url) : null,
     ui.titulo('🔴 PARTIDA INICIADA'),
     ui.nota(`Partida #${matchId} · iniciada por ${interaction.user}`),
@@ -671,11 +720,10 @@ async function iniciarPartida(interaction, matchId) {
 }
 
 /**
- * Bot externo de criação de sala confirma "a sala foi criada" no ticket —
- * a partida NÃO começa ainda: entra em SALA_CRIADA e espera os dois jogadores
- * digitarem "+go" (ou o prazo de cfg.goMinutos vencer). Ver src/events/salaCriada.js.
+ * A API confirmou a criação da sala. A partida entra em SALA_CRIADA e espera
+ * os jogadores digitarem "+go" (ou o prazo de cfg.goMinutos vencer).
  */
-async function marcarSalaCriada(client, matchId) {
+async function marcarSalaCriada(client, matchId, sala = null) {
   const m = get(matchId);
   if (!m || m.status !== 'AGUARDANDO_SALA') return false;
 
@@ -689,6 +737,12 @@ async function marcarSalaCriada(client, matchId) {
       bannerIniciada ? ui.imagem(bannerIniciada.url) : null,
       ui.titulo('🕹️ SALA CRIADA'),
       ui.nota(`Partida #${matchId}`),
+      ui.divisor(),
+      sala ? ui.tabela([
+        ['ID da sala', String(sala.room_id)],
+        ['Senha', String(sala.password)],
+      ]) : null,
+      sala?.invite_link ? ui.txt(`[ENTRAR NA SALA](${sala.invite_link})`) : null,
       ui.divisor(),
       ui.txt(
         'Quando os dois estiverem prontos, digitem **+go** aqui no chat.\n' +
@@ -733,6 +787,8 @@ async function registrarGo(client, matchId, userId) {
 async function iniciarPartidaAutomatico(client, matchId) {
   const m = get(matchId);
   if (!m || !['AGUARDANDO_SALA', 'SALA_CRIADA'].includes(m.status)) return false;
+
+  await iniciarSalaPelaApi(m);
 
   setStatus(matchId, 'EM_ANDAMENTO');
   db.prepare('UPDATE matches SET em_andamento_em = ? WHERE id = ?').run(Date.now(), matchId);
@@ -975,16 +1031,19 @@ const cobrarRecriacao = db.transaction((matchId, userId) => {
   db.prepare(`UPDATE matches SET ${campo} = 1, status = 'AGUARDANDO_RECRIACAO' WHERE id = ?`).run(matchId);
   const atual = get(matchId);
   const ambos = atual.recriar_p1 && atual.recriar_p2;
+  const sessaoAnterior = atual.nix_session_id;
 
   if (ambos) {
     db.prepare(
       `UPDATE matches SET status = 'AGUARDANDO_SALA', recriacoes = recriacoes + 1,
        recriar_p1 = 0, recriar_p2 = 0, claim_p1 = NULL, claim_p2 = NULL,
        proof_p1 = NULL, proof_p2 = NULL, ss_por = NULL, ss_nicks = NULL,
-       staff_id = NULL, cancel_req = NULL WHERE id = ?`
+       staff_id = NULL, cancel_req = NULL, nix_session_id = NULL,
+       nix_room_id = NULL, nix_room_password = NULL, nix_invite_link = NULL
+       WHERE id = ?`
     ).run(matchId);
   }
-  return { ok: true, ambos, custo, match: get(matchId) };
+  return { ok: true, ambos, custo, sessaoAnterior, match: get(matchId) };
 });
 
 async function recriarSala(interaction, matchId) {
@@ -1013,13 +1072,21 @@ async function recriarSala(interaction, matchId) {
     ui.divisor(),
     r.ambos
       ? ui.txt(
-          `Os dois pagaram **${money.fmt(r.custo)}**. Criem a sala de novo e cliquem em ` +
-          '`SALA CRIADA · INICIAR` quando começarem.\n\n' +
+          `Os dois pagaram **${money.fmt(r.custo)}**. Uma nova sala será criada automaticamente.\n\n` +
           'As escolhas de vencedor anteriores foram zeradas.'
         )
       : ui.txt(`<@${interaction.user.id}> pagou **${money.fmt(r.custo)}**.\n<@${adv}>, falta você para refazer a sala.`),
     ui.tabela([['Salas refeitas', String(m.recriacoes)]]),
   )));
+
+  if (r.ambos) {
+    if (r.sessaoAnterior) {
+      await nixSalas.liberarSala(r.sessaoAnterior).catch((e) => {
+        console.error(`[partida #${matchId}] falha ao liberar sala anterior:`, e.message);
+      });
+    }
+    criarSalaPelaApi(interaction.client, matchId).catch(() => {});
+  }
 
   await atualizarPainel(interaction.client, matchId);
 }
@@ -1483,20 +1550,18 @@ async function aceitarRevanche(interaction, proposalId) {
   if (pagouTudo(m)) {
     // Revanche reaproveita as regras — pula direto pra criação da sala, igual
     // confirmarRegras() faz na partida comum. Antes isso ia pra EM_ANDAMENTO
-    // sem nunca acionar o sala-bot nem mostrar "quem venceu" só depois da sala.
+    // sem nunca acionar a API Nix nem mostrar "quem venceu" só depois da sala.
     await interaction.channel.send(ui.msg(ui.bloco(cfg.COR.primaria,
       ui.titulo('🎮 AGUARDANDO CRIAÇÃO DA SALA'),
       ui.nota(`Partida #${m.id} · ${m.modalidade} · ${modo(m)}`),
       ui.divisor(),
       ui.txt(
         `<@${m.p1}> e <@${m.p2}>, os dois valores foram reservados.\n\n` +
-        'Criem a sala, mandem o código aqui e cliquem em `SALA CRIADA · INICIAR` ao começar.'
+        'A sala será criada automaticamente pela API e os dados aparecerão neste ticket.'
       ),
     )));
 
-    const salaBotId = salaBot.getUserId();
-    if (salaBotId) await interaction.channel.members.add(salaBotId).catch(() => {});
-    salaBot.enviarComandoSala(interaction.channel.id, m).catch(() => {});
+    criarSalaPelaApi(interaction.client, m.id).catch(() => {});
   } else {
     const faltando = devendo(m);
     await interaction.channel.send(ui.msg(ui.bloco(cfg.COR.aviso,
@@ -2297,6 +2362,12 @@ async function cancelarPartida(client, matchId, motivo) {
 
   estornarAmbos(m);
 
+  if (m.nix_session_id && ['AGUARDANDO_SALA', 'SALA_CRIADA'].includes(m.status)) {
+    await nixSalas.liberarSala(m.nix_session_id).catch((e) => {
+      console.error(`[partida #${matchId}] falha ao liberar sala cancelada:`, e.message);
+    });
+  }
+
   try {
     require('./analises').concluirPorMatch(matchId);
   } catch (e) {
@@ -2395,93 +2466,12 @@ async function pedirCancelamento(interaction, matchId) {
   )));
 }
 
-/**
- * Monta o embed com o roster ao vivo que a ferramenta externa de sala manda
- * (TIME 1/TIME 2, até 4 slots cada, "Aguardando jogador..." ou nome + ID),
- * com a identidade visual da ACE. Ver src/events/salaBotMirror.js.
- */
-function embedInformacoesSala(m, infoSala) {
-  const linhaTime = (lista, numero) => {
-    const linhas = (lista || []).map((j) => {
-      if (j.vazio) return `\`${j.slot}\` ⏳ _aguardando jogador..._`;
-      return `\`${j.slot}\` ${emo.emulador} **${j.nome}**${j.ffid ? ` — \`${j.ffid}\`` : ''}`;
-    });
-    return `**TIME ${numero}**\n${linhas.length ? linhas.join('\n') : '_vazio_'}`;
-  };
-
-  return ui.bloco(cfg.COR.primaria,
-    ui.titulo('🎮 INFORMAÇÕES DA SALA'),
-    ui.nota(`Partida #${m.id}`),
-    ui.divisor(),
-    ui.txt(linhaTime(infoSala.times?.[1], 1)),
-    ui.divisor(),
-    ui.txt(linhaTime(infoSala.times?.[2], 2)),
-    ui.divisor(),
-    ui.secao(infoSala.statusLabel === 'PRONTA' ? '✅ SALA PRONTA' : '⏳ AGUARDANDO JOGADORES'),
-  );
-}
-
-/**
- * Cria (uma vez) ou edita (nas próximas vezes) o embed de roster da sala —
- * espelha, com a identidade da ACE, o cartão que a ferramenta externa fica
- * atualizando à medida que os jogadores entram na sala.
- */
-async function atualizarStatusSala(client, matchId, infoSala) {
-  const m = get(matchId);
-  if (!m || !m.thread_id) return;
-
-  try {
-    const thread = await client.channels.fetch(m.thread_id);
-    const carga = ui.msg(embedInformacoesSala(m, infoSala));
-
-    if (m.sala_status_msg_id) {
-      const editado = await thread.messages.edit(m.sala_status_msg_id, carga).catch(() => null);
-      if (editado) return;
-    }
-
-    const enviado = await thread.send(carga);
-    db.prepare('UPDATE matches SET sala_status_msg_id = ? WHERE id = ?').run(enviado.id, matchId);
-  } catch (e) {
-    console.error(`[partida #${matchId}] falha ao atualizar status da sala:`, e.message);
-  }
-}
-
-/**
- * Cria (uma vez) ou edita (a cada round) o embed do placar ao vivo — espelha
- * a mensagem "A partida está NxM!" que a ferramenta externa fica editando.
- */
-async function atualizarPlacarSala(client, matchId, placarVencedor, placarPerdedor) {
-  const m = get(matchId);
-  if (!m || !m.thread_id) return;
-
-  try {
-    const thread = await client.channels.fetch(m.thread_id);
-    const carga = ui.msg(ui.bloco(cfg.COR.aviso,
-      ui.titulo('📊 PLACAR AO VIVO'),
-      ui.nota(`Partida #${matchId}`),
-      ui.divisor(),
-      ui.txt(`A partida está **${placarVencedor} x ${placarPerdedor}**`),
-    ));
-
-    if (m.sala_placar_msg_id) {
-      const editado = await thread.messages.edit(m.sala_placar_msg_id, carga).catch(() => null);
-      if (editado) return;
-    }
-
-    const enviado = await thread.send(carga);
-    db.prepare('UPDATE matches SET sala_placar_msg_id = ? WHERE id = ?').run(enviado.id, matchId);
-  } catch (e) {
-    console.error(`[partida #${matchId}] falha ao atualizar placar da sala:`, e.message);
-  }
-}
-
 module.exports = {
   get, getByThread, oponente, ehJogador, premio, painel, botoes, atualizarPainel,
   devendo, pagouTudo, cobrancaNoTicket, registrarPagamento, registrarPagamentoPorSaldo,
   botoesVeredito, fecharTicket, abrirTicket, avisarNoPv, modalRegras, proporRegras,
   confirmarRegras, recusarRegras, iniciarPartida, iniciarPartidaAutomatico,
-  marcarSalaCriada, registrarGo, resolverGoAutomatico, liberarResultado, resolverResultadoAutomatico,
-  atualizarStatusSala, atualizarPlacarSala,
+  criarSalaPelaApi, marcarSalaCriada, registrarGo, resolverGoAutomatico, liberarResultado, resolverResultadoAutomatico,
   vencedorPelosClaims, recuperarResultadosPendentes, resolverAbandonos,
   selecionarVencedor, confirmarVencedor, cancelarEscolhaVencedor, chamarSuporte, chamarVarStaff,
   modalRevanche, abrirModalRevanche, proporRevanche, aceitarRevanche, recusarRevanche,
