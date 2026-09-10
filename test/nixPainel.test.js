@@ -27,9 +27,11 @@ test('senha de dois dígitos e templates sem mapa', () => {
 test('painel serializa slots, dispositivos e controles como embed clássico', () => {
   const payload = ui.painel(m, [player, {...player, player_uid:'567', slot:1, platform:'emulator'}]);
   const json = JSON.stringify(payload);
-  assert.match(json, /Slot 1/); assert.match(json, /Slot 5/);
-  assert.ok(json.indexOf('Slot 1') < json.indexOf('Slot 5'));
-  assert.match(json, /Mobile/); assert.match(json, /Emulador/);
+  assert.match(json, /#1/); assert.match(json, /#5/);
+  assert.ok(json.indexOf('#1') < json.indexOf('#5'));
+  assert.match(json, /📱/); assert.match(json, /🖥️/);
+  assert.match(json, /Time 1/); assert.match(json, /Time 2/);
+  assert.doesNotMatch(json, /Expulsar/);
   assert.match(json, /Copiar ID e Senha/);
   assert.equal(payload.flags, undefined);
   assert.equal(payload.embeds[0].toJSON().color, 0xff0101);
@@ -74,4 +76,17 @@ test('polling final publica uma vez e encerra consultas', async () => {
     assert.equal(calls,1); assert.equal(released,1); assert.equal(m.nix_poll_done,1);
     assert.ok(m.nix_result_msg_id);
   } finally { api.resultado=old; }
+});
+
+test('não edita painel idêntico; altera quando jogador troca dispositivo', async () => {
+  m.nix_panel_id = 'panel';
+  let edits = 0;
+  const client = { user: { displayAvatarURL: () => null }, channels: { fetch: async () => ({
+    messages: { edit: async () => { edits++; } },
+  }) } };
+  await ui.publicar(client, 1, [player]);
+  await ui.publicar(client, 1, [player]);
+  assert.equal(edits, 1);
+  await ui.publicar(client, 1, [{...player, platform: 'emulator'}]);
+  assert.equal(edits, 2);
 });

@@ -332,10 +332,16 @@ titulos, divisores, tabelas alinhadas e botoes agrupados. O kit fica em
 O painel da sala usa embed vermelho, com ID, senha de dois dígitos, status,
 início automático, jogadores por slot/time e dispositivo (mobile/emulador).
 ID e senha também são enviados em duas mensagens separadas. O botão de cópia
-exibe os dados em resposta privada; a expulsão exige cargo de staff e seleção
-do jogador. O link de convite abre o Free Fire.
+exibe os dados em resposta privada. O controle de expulsão foi removido, inclusive
+para botões antigos. O link de convite abre o Free Fire.
 
-A lista é consultada aproximadamente a cada 15 segundos, conforme limites da API.
+A lista é agrupada por Time 1 e Time 2, com 🖥️/📱, slot, nome e UID.
+A lista é consultada no mínimo a cada 15 segundos (configurável por
+`NIX_POLL_SECONDS`). O monitor e Atualizar compartilham o intervalo e um
+orçamento global de até duas consultas principais por segundo. Sob carga,
+o intervalo efetivo aumenta. O Discord só recebe edição se o painel mudar;
+o tempo relativo do início é atualizado pelo próprio Discord. Respostas 429
+pausam as consultas respeitando Retry-After.
 O resultado é consultado respeitando `poll_after_seconds`, até 40 minutos após
 o início, e salvo no banco. Ao finalizar, publica times, vencedor, abates e MVPs.
 A API não fornece placar por round. O resultado exibido não determina pagamentos:

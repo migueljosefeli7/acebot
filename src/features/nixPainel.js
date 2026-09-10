@@ -1,10 +1,14 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, escapeMarkdown } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, escapeMarkdown } = require('discord.js');
 const db = require('../db/database');
 const api = require('../lib/nixSalas');
 const cfg = require('../config');
 const gc = require('../lib/guildconfig');
 const active = new Set();
 const rosters = new Map();
+const published = new Map();
+const publishing = new Set();
+const pollMs = Math.max(15000, Number(process.env.NIX_POLL_SECONDS || 15) * 1000 || 15000);
+let nextQueryAt = 0;
 let sweeping = false;
 let blockedUntil = 0;
 const clean = (v) => escapeMarkdown(String(v ?? '—')).replace(/@/g, '@\u200b').slice(0, 80);
@@ -17,9 +21,14 @@ function painel(m, members, icon) {
   const waiting = m.status === 'SALA_CRIADA';
   const players = (members || []).filter(p => !p.is_owner).slice(0, 8)
     .sort((a, b) => Number(a.slot) - Number(b.slot));
-  const list = members == null ? 'Consultando jogadores…' : players.length ? players.map(p =>
-    `**Slot ${clean(p.slot)} · Time ${clean(p.team)}** — ${p.platform === 'mobile' ? '📱 Mobile' : p.platform === 'emulator' ? '🖥️ Emulador' : '❔ Não informado'}\n${clean(p.nickname)} · UID: \`${clean(p.player_uid)}\``
-  ).join('\n') : 'Nenhum jogador na sala';
+  const line = p => `• ${p.platform === 'mobile' ? '📱' : p.platform === 'emulator' ? '🖥️' : '❔'} **#${clean(p.slot)} ${clean(p.nickname)}** \`${clean(p.player_uid)}\``;
+  const teams = [1, 2].map(team => {
+    const list = players.filter(p => Number(p.team) === team);
+    return `**Time ${team}**\n${list.length ? list.map(line).join('\n') : 'Nenhum jogador'}`;
+  });
+  const unknown = players.filter(p => ![1, 2].includes(Number(p.team)));
+  if (unknown.length) teams.push('**Time não informado**\n' + unknown.map(line).join('\n'));
+  const list = members == null ? 'Consultando jogadores…' : teams.join('\n');
   const delay = api.configuracaoDaSala(m).start_delay_minutes;
   const deadline = Math.floor((m.sala_pronta_em + delay * 60000) / 1000);
   const mode = api.configuracaoDaSala(m).config_type;
@@ -34,7 +43,6 @@ function painel(m, members, icon) {
   if (icon) embed.setThumbnail(icon);
   const components = [
     row(button(`match:room:${m.id}`, 'Iniciar', ButtonStyle.Success, !waiting),
-      button(`match:nix_kick:${m.id}`, 'Expulsar', ButtonStyle.Danger, !waiting),
       button(`match:nix_refresh:${m.id}`, 'Atualizar', ButtonStyle.Primary, !waiting)),
     row(button(`match:nix_copy:${m.id}`, 'Copiar ID e Senha', ButtonStyle.Secondary)),
   ];
@@ -49,14 +57,25 @@ async function publicar(client, id, members = null) {
   if (!m?.nix_session_id || !m.thread_id) return;
   if (members != null) rosters.set(m.nix_session_id, members);
   else members = rosters.get(m.nix_session_id) || null;
-  const thread = await client.channels.fetch(m.thread_id);
   const payload = painel(m, members, client.user.displayAvatarURL());
-  if (m.nix_panel_id) {
-    try { await thread.messages.edit(m.nix_panel_id, payload); return; }
-    catch (e) { if (e.code !== 10008) throw e; }
-  }
-  const message = await thread.send(payload);
-  db.prepare('UPDATE matches SET nix_panel_id = ? WHERE id = ?').run(message.id, id);
+  const fingerprint = JSON.stringify(payload);
+  const key = m.nix_session_id;
+  if (publishing.has(key)) return;
+  if (m.nix_panel_id && published.get(key) === fingerprint) return;
+  publishing.add(key);
+  try {
+    const thread = await client.channels.fetch(m.thread_id);
+    if (m.nix_panel_id) {
+      try {
+        await thread.messages.edit(m.nix_panel_id, payload);
+        published.set(key, fingerprint);
+        return;
+      } catch (e) { if (e.code !== 10008) throw e; }
+    }
+    const message = await thread.send(payload);
+    db.prepare('UPDATE matches SET nix_panel_id = ? WHERE id = ?').run(message.id, id);
+    published.set(key, fingerprint);
+  } finally { publishing.delete(key); }
 }
 
 function resultadoEmbed(m, data) {
@@ -76,13 +95,15 @@ function resultadoEmbed(m, data) {
 }
 
 async function atualizar(client, id) {
-  if (active.has(id) || Date.now() < blockedUntil) return false;
+  if (active.has(id) || Date.now() < blockedUntil || Date.now() < nextQueryAt) return false;
   let m = match(id);
   if (!m?.nix_session_id || m.nix_poll_done || Date.now() < m.nix_poll_at) return false;
   active.add(id);
+  // Orçamento global compartilhado pelo monitor e botão Atualizar: até 2 consultas/s.
+  nextQueryAt = Date.now() + 500;
   const session = m.nix_session_id;
   const stillCurrent = () => match(id)?.nix_session_id === session;
-  db.prepare('UPDATE matches SET nix_poll_at = ? WHERE id = ?').run(Date.now() + 15000, id);
+  db.prepare('UPDATE matches SET nix_poll_at = ? WHERE id = ?').run(Date.now() + pollMs, id);
   try {
     if (m.status === 'SALA_CRIADA') {
       const data = await api.membros(session);
@@ -116,7 +137,7 @@ async function atualizar(client, id) {
         await channel.send('⚠️ A Nix não detectou uma partida concluída nesta sala. Procurem o suporte para conferir.');
       }
     } else {
-      const seconds = Math.max(10, Number(result.poll_after_seconds) || 20);
+      const seconds = Math.max(pollMs / 1000, Number(result.poll_after_seconds) || 20);
       db.prepare('UPDATE matches SET nix_poll_at = ? WHERE id = ?').run(Date.now() + seconds * 1000, id);
     }
     return true;
@@ -149,7 +170,12 @@ async function varrer(client) {
       AND nix_poll_done = 0 AND nix_poll_at <= ? AND status != 'CANCELADA'
       AND (status = 'SALA_CRIADA' OR em_andamento_em > ?)
       ORDER BY nix_poll_at LIMIT 20`).all(Date.now(), Date.now() - 40 * 60000);
-    for (const m of rows) await atualizar(client, m.id);
+    for (const m of rows) {
+      if (Date.now() < blockedUntil) break;
+      const wait = nextQueryAt - Date.now();
+      if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+      await atualizar(client, m.id);
+    }
   } finally { sweeping = false; }
 }
 
@@ -167,31 +193,6 @@ async function acao(interaction, id, action) {
     const ok = await atualizar(interaction.client, id);
     return interaction.editReply(ok ? 'Painel atualizado.' : 'Aguarde a próxima atualização automática (ou a liberação do limite da API).');
   }
-  // Somente a staff expulsa: os capitães não devem poder remover o adversário.
-  if (!gc.hasRole(interaction.member, 'cargo_staff')) return interaction.editReply('Somente a staff pode expulsar jogadores.');
-  try {
-    const data = await api.membros(m.nix_session_id);
-    const players = (data.members || []).filter(p => !p.is_owner).slice(0, 8);
-    if (action === 'nix_kick_confirm') {
-      const [session, uid] = String(interaction.values[0]).split('|');
-      if (session !== m.nix_session_id || !players.some(p => String(p.player_uid) === uid) || match(id).status !== 'SALA_CRIADA') {
-        return interaction.editReply('Jogador ou sessão mudou. Abra o menu novamente.');
-      }
-      await api.expulsar(session, uid);
-      db.prepare('UPDATE matches SET nix_poll_at = 0 WHERE id = ?').run(id);
-      await atualizar(interaction.client, id);
-      return interaction.editReply({ content: 'Expulsão solicitada. O painel acompanha a lista real da sala.', components: [] });
-    }
-    if (!players.length) return interaction.editReply('Nenhum jogador para expulsar.');
-    const menu = new StringSelectMenuBuilder().setCustomId(`nix:nix_kick_confirm:${id}`)
-      .setPlaceholder('Selecione para confirmar a expulsão').addOptions(players.map(p => ({
-        label: String(p.nickname || p.player_uid).slice(0, 100),
-        description: `Slot ${p.slot} · Time ${p.team} · UID ${p.player_uid}`.slice(0, 100),
-        value: `${m.nix_session_id}|${p.player_uid}`,
-      })));
-    return interaction.editReply({ content: 'Selecione o jogador que deseja expulsar:', components: [row(menu)] });
-  } catch (e) {
-    return interaction.editReply(`Não foi possível consultar/expulsar agora (HTTP ${e.status || 'conexão'}). Tente novamente depois.`);
-  }
+  return interaction.editReply({ content: 'O controle de expulsão foi removido.', components: [] });
 }
 module.exports = { painel, resultadoEmbed, publicar, atualizar, varrer, acao };
