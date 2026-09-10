@@ -61,6 +61,11 @@ const COLUNAS_NOVAS = [
   ['matches', 'nix_room_id', 'TEXT'],
   ['matches', 'nix_room_password', 'TEXT'],
   ['matches', 'nix_invite_link', 'TEXT'],
+  ['matches', 'nix_panel_id', 'TEXT'],
+  ['matches', 'nix_result_msg_id', 'TEXT'],
+  ['matches', 'nix_result_json', 'TEXT'],
+  ['matches', 'nix_poll_at', 'INTEGER NOT NULL DEFAULT 0'],
+  ['matches', 'nix_poll_done', 'INTEGER NOT NULL DEFAULT 0'],
 ];
 
 for (const [tabela, coluna, tipo] of COLUNAS_NOVAS) {

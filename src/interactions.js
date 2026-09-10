@@ -310,6 +310,9 @@ async function onButton(interaction) {
       }
       case 'rules_refuse': return partida.recusarRegras(interaction, id);
       case 'room': return partida.iniciarPartida(interaction, id);
+      case 'nix_copy':
+      case 'nix_refresh':
+      case 'nix_kick': return require('./features/nixPainel').acao(interaction, id, acao);
       case 'pay': {
         const m = partida.get(id);
         if (!m) return nao(interaction, 'Partida não encontrada', 'Esse ticket não corresponde a nenhuma partida.');
@@ -354,6 +357,7 @@ async function onButton(interaction) {
 
 async function onSelect(interaction) {
   const [ns, acao, id] = interaction.customId.split(':');
+  if (ns === 'nix') return require('./features/nixPainel').acao(interaction, Number(id), acao);
   if (ns === 'match' && acao === 'winner') {
     return partida.selecionarVencedor(interaction, Number(id), interaction.values[0]);
   }

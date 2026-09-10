@@ -329,6 +329,20 @@ titulos, divisores, tabelas alinhadas e botoes agrupados. O kit fica em
 
 ## Fluxo do ticket
 
+O painel da sala usa embed vermelho, com ID, senha de dois dígitos, status,
+início automático, jogadores por slot/time e dispositivo (mobile/emulador).
+ID e senha também são enviados em duas mensagens separadas. O botão de cópia
+exibe os dados em resposta privada; a expulsão exige cargo de staff e seleção
+do jogador. O link de convite abre o Free Fire.
+
+A lista é consultada aproximadamente a cada 15 segundos, conforme limites da API.
+O resultado é consultado respeitando `poll_after_seconds`, até 40 minutos após
+o início, e salvo no banco. Ao finalizar, publica times, vencedor, abates e MVPs.
+A API não fornece placar por round. O resultado exibido não determina pagamentos:
+os jogadores continuam confirmando o vencedor pelo fluxo existente.
+
+Verificação local sem consumir salas: `node --test test/nixPainel.test.js`.
+
 O nome de cada tópico acompanha automaticamente o status da própria partida
 (`PAGAMENTO`, `REGRAS`, `CRIANDO SALA`, `SALA CRIADA`, `EM ANDAMENTO`,
 `FINALIZADA`, entre outros), sem alterar os demais tópicos.

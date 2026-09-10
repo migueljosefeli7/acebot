@@ -63,6 +63,11 @@ async function registrarComandos() {
 
 ratelimit.instalar(client);
 
+setInterval(() => {
+  if (client.isReady()) require('./features/nixPainel').varrer(client).catch(e =>
+    console.warn('[nix] falha no monitor:', e.message));
+}, 5000).unref();
+
 client.once(Events.ClientReady, async () => {
   console.log(`🤖 Online como ${client.user.tag}`);
   client.user.setActivity('apostas de Free Fire 🎮');

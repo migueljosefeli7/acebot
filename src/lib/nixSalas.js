@@ -18,8 +18,8 @@ function configuracaoDaSala(match) {
     : match.gelo === 'INFINITO' ? 'gelo_inf' : 'ap_padrao';
 
   return {
-    password: String(crypto.randomInt(100000, 1000000)),
-    start_delay_minutes: cfg.nixSalas.startDelayMinutes,
+    password: String(crypto.randomInt(10, 100)),
+    start_delay_minutes: Math.min(cfg.nixSalas.startDelayMinutes, Math.max(1, cfg.goMinutos)),
     config_type: configType,
     room_name: `${cfg.nomeBot} #${match.id}`.slice(0, 30),
     '1500_ouro': false,
@@ -77,4 +77,11 @@ const liberarSala = (sessionId) => requisitar(`/rooms/${encodeURIComponent(sessi
   method: 'POST',
 });
 
-module.exports = { NixApiError, configuracaoDaSala, criarSala, iniciarSala, liberarSala };
+const consultarSala = (id) => requisitar(`/rooms/${encodeURIComponent(id)}`);
+const membros = (id) => requisitar(`/rooms/${encodeURIComponent(id)}/members`);
+const resultado = (id) => requisitar(`/rooms/${encodeURIComponent(id)}/result`);
+const expulsar = (id, uid) => requisitar(`/rooms/${encodeURIComponent(id)}/kick`, {
+  method: 'POST', body: { player_uid: String(uid) },
+});
+module.exports = { NixApiError, configuracaoDaSala, criarSala, iniciarSala, liberarSala,
+  consultarSala, membros, resultado, expulsar };

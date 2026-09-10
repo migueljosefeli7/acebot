@@ -725,6 +725,7 @@ async function iniciarPartida(interaction, matchId) {
 
   setStatus(matchId, 'EM_ANDAMENTO');
   db.prepare('UPDATE matches SET em_andamento_em = ? WHERE id = ?').run(Date.now(), matchId);
+  await require('./nixPainel').publicar(interaction.client, matchId).catch(() => {});
 
   const bannerIniciadaManual = banners.obterStatus('iniciada');
   await interaction.editReply(ui.msg(ui.bloco(cfg.COR.primaria,
@@ -756,27 +757,11 @@ async function marcarSalaCriada(client, matchId, sala = null) {
   setStatus(matchId, 'SALA_CRIADA');
   db.prepare('UPDATE matches SET sala_pronta_em = ? WHERE id = ?').run(Date.now(), matchId);
 
-  const thread = m.thread_id ? await client.channels.fetch(m.thread_id).catch(() => null) : null;
-  if (thread) {
-    const bannerIniciada = banners.obterStatus('iniciada');
-    const msg = await thread.send(ui.msg(ui.bloco(cfg.COR.primaria,
-      bannerIniciada ? ui.imagem(bannerIniciada.url) : null,
-      ui.titulo('🕹️ SALA CRIADA'),
-      ui.nota(`Partida #${matchId}`),
-      ui.divisor(),
-      sala ? ui.tabela([
-        ['ID da sala', String(sala.room_id)],
-        ['Senha', String(sala.password)],
-      ]) : null,
-      sala?.invite_link ? ui.txt(`[ENTRAR NA SALA](${sala.invite_link})`) : null,
-      ui.divisor(),
-      ui.txt(
-        'Quando os dois estiverem prontos, digitem **+go** aqui no chat.\n' +
-        `Se ninguém digitar, a partida começa sozinha em até ${cfg.goMinutos} minutos.`
-      ),
-    ), bannerIniciada ? { files: [{ attachment: bannerIniciada.caminho, name: bannerIniciada.nome }] } : {})).catch(() => null);
-    if (msg) db.prepare('UPDATE matches SET go_msg_id = ? WHERE id = ?').run(msg.id, matchId);
-  }
+  await require('./nixPainel').publicar(client, matchId);
+  const thread = await client.channels.fetch(m.thread_id);
+  // Mensagens independentes para copiar facilmente no celular.
+  await thread.send({ content: String(sala?.room_id || m.nix_room_id), allowedMentions: { parse: [] } });
+  await thread.send({ content: String(sala?.password || m.nix_room_password), allowedMentions: { parse: [] } });
 
   await atualizarPainel(client, matchId);
   return true;
@@ -810,16 +795,17 @@ async function registrarGo(client, matchId, userId) {
  * index.js). Aceita a partida vindo de AGUARDANDO_SALA (sem passar por
  * SALA_CRIADA, ex: deteccao falhou) ou de SALA_CRIADA (fluxo normal).
  */
-async function iniciarPartidaAutomatico(client, matchId) {
+async function iniciarPartidaAutomatico(client, matchId, confirmadoPelaApi = false) {
   const m = get(matchId);
   if (!m || !['AGUARDANDO_SALA', 'SALA_CRIADA'].includes(m.status)) return false;
 
-  await iniciarSalaPelaApi(m);
+  if (!confirmadoPelaApi) await iniciarSalaPelaApi(m);
 
   setStatus(matchId, 'EM_ANDAMENTO');
   db.prepare('UPDATE matches SET em_andamento_em = ? WHERE id = ?').run(Date.now(), matchId);
 
   const canal = m.thread_id ? await client.channels.fetch(m.thread_id).catch(() => null) : null;
+  await require('./nixPainel').publicar(client, matchId).catch(() => {});
   if (canal) {
     if (m.go_msg_id) {
       await canal.messages.delete(m.go_msg_id).catch(() => {});
@@ -1065,6 +1051,10 @@ const cobrarRecriacao = db.transaction((matchId, userId) => {
        recriar_p1 = 0, recriar_p2 = 0, claim_p1 = NULL, claim_p2 = NULL,
        proof_p1 = NULL, proof_p2 = NULL, ss_por = NULL, ss_nicks = NULL,
        staff_id = NULL, cancel_req = NULL, nix_session_id = NULL,
+       nix_panel_id = NULL, nix_result_msg_id = NULL, nix_result_json = NULL,
+       nix_poll_at = 0, nix_poll_done = 0, go_p1 = 0, go_p2 = 0,
+       sala_pronta_em = NULL, go_msg_id = NULL, em_andamento_em = NULL,
+       pronto_pra_resultado = 0,
        nix_room_id = NULL, nix_room_password = NULL, nix_invite_link = NULL
        WHERE id = ?`
     ).run(matchId);
