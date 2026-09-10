@@ -60,8 +60,12 @@ const STATUS_TOPICO = {
   CANCELADA: '🚫 CANCELADA',
 };
 
-const nomeTopicoPartida = (m) =>
-  `${STATUS_TOPICO[m.status] || '⚔ PARTIDA'} · ${m.modalidade} · ${money.fmt(m.valor)} · #${m.id}`.slice(0, 100);
+const nomeTopicoPartida = (m) => {
+  const status = m.status === 'EM_ANDAMENTO' && m.pronto_pra_resultado
+    ? '🏁 PARTIDA FINALIZADA'
+    : STATUS_TOPICO[m.status] || '⚔ PARTIDA';
+  return `${status} · ${m.modalidade} · ${money.fmt(m.valor)} · #${m.id}`.slice(0, 100);
+};
 
 // Cancelar so vale enquanto as regras nao foram aceitas. Depois disso a partida
 // esta valendo e so a staff pode anular.
@@ -123,7 +127,9 @@ const placar = (m) =>
 
 function painel(m, { bannerUrl = null, client = null } = {}) {
   const streak = require('./streak');
-  const s = STATUS[m.status] || { txt: m.status, cor: cfg.COR.neutro };
+  const s = m.status === 'EM_ANDAMENTO' && m.pronto_pra_resultado
+    ? { txt: '🏁 PARTIDA FINALIZADA · aguardando vencedor', cor: cfg.COR.sucesso }
+    : STATUS[m.status] || { txt: m.status, cor: cfg.COR.neutro };
 
   // Alguem em win streak jogando: ticket ganha destaque laranja e o 🔥N ao lado do nome.
   const tagP1 = streak.tagStreak(m.p1);
@@ -853,16 +859,18 @@ async function resolverGoAutomatico(client) {
  */
 async function liberarResultado(client, matchId) {
   const m = get(matchId);
-  if (!m || m.status !== 'EM_ANDAMENTO' || m.pronto_pra_resultado) return false;
+  if (!m || !['EM_ANDAMENTO', 'AGUARDANDO_RESULTADO'].includes(m.status)) return false;
 
-  db.prepare('UPDATE matches SET pronto_pra_resultado = 1 WHERE id = ?').run(matchId);
+  const acabouAgora = !m.pronto_pra_resultado;
+  if (acabouAgora) db.prepare('UPDATE matches SET pronto_pra_resultado = 1 WHERE id = ?').run(matchId);
   await atualizarPainel(client, matchId);
 
-  // Não basta habilitar o seletor no painel lá em cima — manda um embed novo
-  // avisando que a partida acabou e pedindo pra escolher o vencedor aqui embaixo.
+  const atualizado = get(matchId);
+  const thread = await client.channels.fetch(atualizado.thread_id).catch(() => null);
+  if (!thread) return acabouAgora;
+
+  // Os dois controles são mensagens separadas. Se uma falhar, a outra ainda é enviada.
   try {
-    const atualizado = get(matchId);
-    const thread = await client.channels.fetch(atualizado.thread_id);
     const banner = banners.obterStatus('finalizada');
     await thread.send(ui.msg([
       ui.bloco(cfg.COR.primaria,
@@ -873,7 +881,10 @@ async function liberarResultado(client, matchId) {
       ),
       seletorVencedor(atualizado, client),
     ], banner ? { files: [{ attachment: banner.caminho, name: banner.nome }] } : {}));
-
+  } catch (e) {
+    console.error(`[partida #${matchId}] falha ao enviar seletor de vencedor:`, e.message);
+  }
+  try {
     await thread.send(ui.msg(ui.bloco(cfg.COR.aviso,
       ui.titulo('🆘 PRECISA DE AJUDA?'),
       ui.divisor(),
@@ -883,10 +894,10 @@ async function liberarResultado(client, matchId) {
       ),
     )));
   } catch (e) {
-    console.error(`[partida #${matchId}] falha ao enviar aviso de resultado liberado:`, e.message);
+    console.error(`[partida #${matchId}] falha ao enviar painel de suporte:`, e.message);
   }
 
-  return true;
+  return acabouAgora;
 }
 
 /** Partidas EM_ANDAMENTO cujo prazo de cfg.resultadoLiberaSegundos venceu sem o bot externo confirmar. */
