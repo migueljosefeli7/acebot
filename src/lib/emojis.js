@@ -36,7 +36,7 @@ module.exports = {
   troféu: '🏆',
   aviso: '⚠️',
   emulador: '<:PC:1542003909604671628>', // fila Misto (quantidade de EMU no time)
-  mobile: '📱',       // fila 1x1 Tático (categoria Mobile)
+  mobile: '<:CEL:1542003873789640855>', // fila 1x1 Tático (categoria Mobile)
   entrar: '<:ligar:1542942282813280277>', // fila: opcao padrao "Entrar na Fila"
   fullArma: '<:um1:1542004122461544608>', // fila 2x2/3x3/4x4 Mobile/Emulador
 };
