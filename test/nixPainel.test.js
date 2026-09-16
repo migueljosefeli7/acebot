@@ -29,7 +29,7 @@ test('painel serializa slots, dispositivos e controles como embed clássico', ()
   const json = JSON.stringify(payload);
   assert.match(json, /#1/); assert.match(json, /#5/);
   assert.ok(json.indexOf('#1') < json.indexOf('#5'));
-  assert.match(json, /📱/); assert.match(json, /🖥️/);
+  assert.match(json, /<:CEL:1542003873789640855>/); assert.match(json, /<:PC:1542003909604671628>/);
   assert.match(json, /Time 1/); assert.match(json, /Time 2/);
   assert.doesNotMatch(json, /Expulsar/);
   assert.match(json, /Copiar ID e Senha/);
@@ -82,7 +82,7 @@ test('resultado mostra somente vencedor, kills e MVP disponíveis na API AP', ()
 test('embed de início mostra times, slot, dispositivo e horário', () => {
   const json=JSON.stringify(ui.inicioEmbed({...m,status:'EM_ANDAMENTO',em_andamento_em:Date.now()},[player],null,true));
   assert.match(json,/Sala iniciada com sucesso/); assert.match(json,/automática/);
-  assert.match(json,/Time 1/); assert.match(json,/Time 2/); assert.match(json,/#5/); assert.match(json,/📱/);
+  assert.match(json,/Time 1/); assert.match(json,/Time 2/); assert.match(json,/#5/); assert.match(json,/<:CEL:1542003873789640855>/);
   assert.match(json,/<t:/);
   assert.doesNotMatch(json,/Recriar sala/);
   assert.doesNotMatch(json,/CHAMAR SUPORTE/);

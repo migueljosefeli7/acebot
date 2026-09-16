@@ -4,6 +4,7 @@ const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
   SeparatorSpacingSize, MessageFlags,
 } = require('discord.js');
+const emojiServidor = require('./emojiServidor');
 
 /**
  * Kit de UI do bot — Components V2.
@@ -23,7 +24,7 @@ const flags = (efemero = false) => (efemero ? V2 | EFEMERO : V2);
 
 /* ------------------------------------------------------------------ TEXTO */
 
-const txt = (conteudo) => new TextDisplayBuilder().setContent(String(conteudo));
+const txt = (conteudo) => new TextDisplayBuilder().setContent(emojiServidor.personalizar(conteudo));
 
 /** Titulo principal do bloco. */
 const titulo = (t) => txt(`## ${t}`);
@@ -92,14 +93,20 @@ const imagem = (...urls) => new MediaGalleryBuilder()
 const linhaBotoes = (...botoes) => new ActionRowBuilder().addComponents(...botoes.filter(Boolean));
 
 const botao = (id, rotulo, { estilo = ButtonStyle.Secondary, emoji, off = false } = {}) => {
-  const b = new ButtonBuilder().setCustomId(id).setLabel(rotulo).setStyle(estilo).setDisabled(off);
-  if (emoji) b.setEmoji(emoji);
+  const rotuloOriginal = String(rotulo);
+  const emojiNoRotulo = rotuloOriginal.match(emojiServidor.EMOJI_RE)?.[0];
+  const b = new ButtonBuilder().setCustomId(id).setLabel(emojiServidor.limparComuns(rotuloOriginal) || 'Ação').setStyle(estilo).setDisabled(off);
+  const personalizado = emojiServidor.resolver(emoji || emojiNoRotulo);
+  if (personalizado) b.setEmoji(personalizado);
   return b;
 };
 
 const botaoLink = (url, rotulo, emoji) => {
-  const b = new ButtonBuilder().setURL(url).setLabel(rotulo).setStyle(ButtonStyle.Link);
-  if (emoji) b.setEmoji(emoji);
+  const rotuloOriginal = String(rotulo);
+  const emojiNoRotulo = rotuloOriginal.match(emojiServidor.EMOJI_RE)?.[0];
+  const b = new ButtonBuilder().setURL(url).setLabel(emojiServidor.limparComuns(rotuloOriginal) || 'Abrir').setStyle(ButtonStyle.Link);
+  const personalizado = emojiServidor.resolver(emoji || emojiNoRotulo);
+  if (personalizado) b.setEmoji(personalizado);
   return b;
 };
 

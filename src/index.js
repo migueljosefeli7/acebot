@@ -16,6 +16,7 @@ const membros = require('./lib/membros');
 const ratelimit = require('./lib/ratelimit');
 const { iniciarWebhook } = require('./web/server');
 const configPadrao = require('./lib/configPadrao');
+const emojiServidor = require('./lib/emojiServidor');
 
 if (!cfg.token || !cfg.clientId) {
   console.error('❌ Faltou DISCORD_TOKEN ou CLIENT_ID no arquivo .env');
@@ -71,6 +72,9 @@ setInterval(() => {
 client.once(Events.ClientReady, async () => {
   console.log(`🤖 Online como ${client.user.tag}`);
   client.user.setActivity('apostas de Free Fire 🎮');
+
+  const guildEmojis = cfg.guildId ? await client.guilds.fetch(cfg.guildId).catch(() => null) : client.guilds.cache.first();
+  await emojiServidor.carregar(guildEmojis);
 
   if (!cfg.nixSalas.apiKey) {
     console.warn('⚠️ NIX_API_KEY não configurada — a criação automática de salas ficará indisponível.');

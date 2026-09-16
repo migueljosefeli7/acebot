@@ -3,6 +3,7 @@ const db = require('../db/database');
 const api = require('../lib/nixSalas');
 const cfg = require('../config');
 const gc = require('../lib/guildconfig');
+const emojiServidor = require('../lib/emojiServidor');
 const active = new Set();
 const rosters = new Map();
 const published = new Map();
@@ -21,7 +22,7 @@ const timestamp = (value) => {
   const millis = typeof value === 'number' ? (value < 1e12 ? value * 1000 : value) : Date.parse(value);
   return Number.isFinite(millis) ? `<t:${Math.floor(millis / 1000)}:F>` : clean(value);
 };
-const playerLine = (p) => `• ${p.platform === 'mobile' ? '📱' : p.platform === 'emulator' ? '🖥️' : '❔'} **#${clean(p.slot)} ${clean(p.nickname)}** \`${clean(p.player_uid ?? p.account_id)}\``;
+const playerLine = (p) => emojiServidor.personalizar(`• ${p.platform === 'mobile' ? '📱' : p.platform === 'emulator' ? '🖥️' : '❔'} **#${clean(p.slot)} ${clean(p.nickname)}** \`${clean(p.player_uid ?? p.account_id)}\``);
 const teamBySlot = (slot) => {
   const n = Number(slot);
   if (n >= 1 && n <= 4) return 1;
@@ -58,9 +59,9 @@ function painel(m, members, icon) {
   const embed = new EmbedBuilder().setColor(0xff0101).setTitle('Painel da Sala')
     .setDescription('Sala criada com sucesso!')
     .addFields(
-      { name: 'ⓘ Informações da Sala', value:
+      { name: emojiServidor.personalizar('ℹ️ Informações da Sala'), value:
         `• **ID da Sala:** \`${m.nix_room_id}\`\n• **Senha:** \`${m.nix_room_password}\`\n• **Status:** ${m.nix_result_json ? 'Partida finalizada' : waiting ? 'Aguardando' : m.status === 'EM_ANDAMENTO' ? 'Em andamento' : clean(m.status)}\n• **Início Automático:** ${waiting ? '<t:' + deadline + ':R>' : '—'}` },
-      { name: `👥 Jogadores na Sala (${players.length}/8)`, value: list.slice(0, 1024) },
+      { name: emojiServidor.personalizar(`👥 Jogadores na Sala (${players.length}/8)`), value: list.slice(0, 1024) },
       { name: 'Gerenciar sala', value: 'Use os botões abaixo. Quando estiverem prontos, os dois podem digitar **+go**.' }
     ).setFooter({ text: `Modo: ${{ap_padrao: 'AP Padrão', gelo_inf: 'Gelo Infinito', tatico: 'Tático'}[mode]} · Partida #${m.id}` });
   if (icon) embed.setThumbnail(icon);
@@ -103,7 +104,7 @@ function corrigirTimesDoResultado(data, members) {
 }
 
 function inicioEmbed(m, members, icon, automatico = true) {
-  const embed = new EmbedBuilder().setColor(0xff0101).setTitle('🚀 Sala iniciada com sucesso!')
+  const embed = new EmbedBuilder().setColor(0xff0101).setTitle(emojiServidor.personalizar('🚀 Sala iniciada com sucesso!'))
     .setDescription(`A sala foi iniciada de forma ${automatico ? 'automática' : 'manual'}.\nIniciada em ${timestamp(m.em_andamento_em || Date.now())}`)
     .addFields(rosterFields(members))
     .setFooter({ text: `Sala ${m.nix_room_id} · Partida #${m.id}` });
@@ -112,7 +113,7 @@ function inicioEmbed(m, members, icon, automatico = true) {
 }
 
 function recriacaoEmbed(m) {
-  const embed = new EmbedBuilder().setColor(0xff0101).setTitle('⚠️ Quebra de regra durante a partida')
+  const embed = new EmbedBuilder().setColor(0xff0101).setTitle(emojiServidor.personalizar('⚠️ Quebra de regra durante a partida'))
     .setDescription(
       'Se acontecer alguma quebra de regra, os jogadores podem conversar e escolher uma destas soluções:\n\n' +
       '• **Entregar o round** para o lado prejudicado pela regra quebrada; ou\n' +
@@ -167,15 +168,15 @@ async function publicar(client, id, members = null) {
 
 function resultadoEmbed(m, data) {
   const vencedor = data.winner_team == null ? 'Vencedor não identificado' : `Time ${clean(data.winner_team)} venceu`;
-  const embed = new EmbedBuilder().setColor(0xff0101).setTitle('🏆 Resultado da Partida')
-    .setDescription(`## ${vencedor} 🏆`);
+  const embed = new EmbedBuilder().setColor(0xff0101).setTitle(emojiServidor.personalizar('🏆 Resultado da Partida'))
+    .setDescription(emojiServidor.personalizar(`## ${vencedor} 🏆`));
   for (const team of (data.teams || []).slice(0, 2)) {
-    embed.addFields({ name: `Time ${clean(team.team)}${team.is_winner ? ' 🏆' : ''}`, value:
+    embed.addFields({ name: emojiServidor.personalizar(`Time ${clean(team.team)}${team.is_winner ? ' 🏆' : ''}`), value:
       (team.players || []).slice(0, 4).map(p =>
-        `${String(data.match_mvp?.account_id) === String(p.account_id) ? '⭐ ' : ''}**${clean(p.nickname)}** · **${p.kills ?? 0} KILL**`
+        emojiServidor.personalizar(`${String(data.match_mvp?.account_id) === String(p.account_id) ? '⭐ ' : ''}**${clean(p.nickname)}** · **${p.kills ?? 0} KILL**`)
       ).join('\n\n').slice(0, 1024) || 'Sem dados' });
   }
-  if (data.match_mvp) embed.addFields({ name: '⭐ MVP da partida',
+  if (data.match_mvp) embed.addFields({ name: emojiServidor.personalizar('⭐ MVP da partida'),
     value: `**${clean(data.match_mvp.nickname)}** · Time ${clean(data.match_mvp.team)} · **${data.match_mvp.kills ?? 0} KILL**` });
   embed.setFooter({ text: `Partida #${m.id} · confirme o vencedor abaixo.` });
   return { embeds: [embed], allowedMentions: { parse: [] } };
