@@ -44,27 +44,13 @@ const STATUS = {
   CANCELADA: { txt: '🚫 CANCELADA', cor: cfg.COR.neutro },
 };
 
-const STATUS_TOPICO = {
-  AGUARDANDO_PAGAMENTO: '💳 PAGAMENTO',
-  AGUARDANDO_REGRAS: '📝 REGRAS',
-  REGRA_PROPOSTA: '📝 REGRA PROPOSTA',
-  AGUARDANDO_SALA: '🎮 CRIANDO SALA',
-  SALA_CRIADA: '🕹️ SALA CRIADA',
-  EM_ANDAMENTO: '🔴 EM ANDAMENTO',
-  AGUARDANDO_RECRIACAO: '🔄 RECRIANDO SALA',
-  REVISAO: '⚖️ EM REVISÃO',
-  AGUARDANDO_RESULTADO: '⏳ CONFIRMANDO RESULTADO',
-  SS_SOLICITADO: '🎥 VAR SOLICITADO',
-  DISPUTA: '⚠️ EM DISPUTA',
-  FINALIZADA: '✅ FINALIZADA',
-  CANCELADA: '🚫 CANCELADA',
-};
-
 const nomeTopicoPartida = (m) => {
-  const status = m.status === 'EM_ANDAMENTO' && m.pronto_pra_resultado
-    ? '🏁 PARTIDA FINALIZADA'
-    : STATUS_TOPICO[m.status] || '⚔ PARTIDA';
-  return `${status} · ${m.modalidade} · ${money.fmt(m.valor)} · #${m.id}`.slice(0, 100);
+  let status = 'Regras';
+  if (['FINALIZADA', 'CANCELADA'].includes(m.status) || m.pronto_pra_resultado) status = 'Finalizada';
+  else if (['REVISAO', 'SS_SOLICITADO', 'DISPUTA'].includes(m.status)) status = 'SOS';
+  else if (ehRevanche(m.id)) status = 'Revanche';
+  else if (m.status === 'EM_ANDAMENTO' || m.status === 'AGUARDANDO_RESULTADO') status = 'Iniciada';
+  return `${status} · ${m.modalidade} · ${modo(m)} · ${money.fmt(m.valor)} · #${m.id}`.slice(0, 100);
 };
 
 // Cancelar so vale enquanto as regras nao foram aceitas. Depois disso a partida
@@ -1594,6 +1580,7 @@ async function aceitarRevanche(interaction, proposalId) {
     )));
   }
 
+  await atualizarPainel(interaction.client, m.id);
   await avisarNoPv(interaction.client, m, interaction.channel);
 }
 
