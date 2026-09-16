@@ -63,6 +63,7 @@ const COLUNAS_NOVAS = [
   ['matches', 'nix_invite_link', 'TEXT'],
   ['matches', 'nix_panel_id', 'TEXT'],
   ['matches', 'nix_result_msg_id', 'TEXT'],
+  ['matches', 'nix_recreate_msg_id', 'TEXT'],
   ['matches', 'nix_result_json', 'TEXT'],
   ['matches', 'nix_roster_json', 'TEXT'],
   ['matches', 'nix_poll_at', 'INTEGER NOT NULL DEFAULT 0'],

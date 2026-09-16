@@ -1027,7 +1027,7 @@ const cobrarRecriacao = db.transaction((matchId, userId) => {
        recriar_p1 = 0, recriar_p2 = 0, claim_p1 = NULL, claim_p2 = NULL,
        proof_p1 = NULL, proof_p2 = NULL, ss_por = NULL, ss_nicks = NULL,
        staff_id = NULL, cancel_req = NULL, nix_session_id = NULL,
-       nix_panel_id = NULL, nix_result_msg_id = NULL, nix_result_json = NULL,
+       nix_panel_id = NULL, nix_result_msg_id = NULL, nix_recreate_msg_id = NULL, nix_result_json = NULL,
        nix_roster_json = NULL,
        nix_poll_at = 0, nix_poll_done = 0, go_p1 = 0, go_p2 = 0,
        sala_pronta_em = NULL, go_msg_id = NULL, em_andamento_em = NULL,
@@ -1061,6 +1061,7 @@ async function recriarSala(interaction, matchId) {
 }
 
 async function confirmarRecriacao(interaction, matchId) {
+  const salaAnterior = get(matchId);
   const r = cobrarRecriacao(matchId, interaction.user.id);
 
   if (r.erro === 'NAO_E_JOGADOR') return nao(interaction, 'Você não é jogador', 'Só os jogadores podem refazer a sala.');
@@ -1074,6 +1075,8 @@ async function confirmarRecriacao(interaction, matchId) {
     ), { efemero: true }));
   }
   if (!r.ok) return nao(interaction, 'Não consegui processar', 'Tente de novo em instantes.');
+
+  await require('./nixPainel').excluirRecriacao(interaction.client, salaAnterior).catch(() => {});
 
   const m = r.match;
   await interaction.update(ui.msg(ui.bloco(cfg.COR.sucesso,

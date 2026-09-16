@@ -136,8 +136,25 @@ async function publicarInicio(client, id, automatico = true) {
   if (!m?.thread_id) return null;
   const channel = await client.channels.fetch(m.thread_id);
   const inicio = await channel.send(inicioEmbed(m, rosters.get(m.nix_session_id) || rosterSalvo(m), client.user.displayAvatarURL(), automatico));
-  await channel.send(recriacaoEmbed(m));
+  const recriacao = await channel.send(recriacaoEmbed(m));
+  db.prepare('UPDATE matches SET nix_recreate_msg_id = ? WHERE id = ?').run(recriacao.id, id);
   return inicio;
+}
+
+async function excluirRecriacao(client, m, channel = null) {
+  if (!m?.thread_id) return false;
+  const thread = channel || await client.channels.fetch(m.thread_id);
+  let message = null;
+  if (m.nix_recreate_msg_id) {
+    message = await thread.messages.fetch(m.nix_recreate_msg_id).catch(() => null);
+  } else {
+    const recentes = await thread.messages.fetch({ limit: 100 }).catch(() => null);
+    message = recentes?.find?.((item) => item.author?.id === client.user.id &&
+      item.components?.some?.((linha) => linha.components?.some?.((botao) => botao.customId === `match:recriar:${m.id}`))) || null;
+  }
+  if (message) await message.delete().catch(() => {});
+  db.prepare('UPDATE matches SET nix_recreate_msg_id = NULL WHERE id = ?').run(m.id);
+  return Boolean(message);
 }
 
 async function publicar(client, id, members = null) {
@@ -211,6 +228,7 @@ async function atualizar(client, id) {
     if (result.status === 'finalizada') {
       result = corrigirTimesDoResultado(result, rosters.get(session) || rosterSalvo(m));
       db.prepare('UPDATE matches SET nix_result_json = ? WHERE id = ?').run(JSON.stringify(result), id);
+      await excluirRecriacao(client, m);
       if (!m.nix_result_msg_id) {
         const channel = await client.channels.fetch(m.thread_id);
         const message = await channel.send(resultadoEmbed(m, result));
@@ -267,6 +285,7 @@ async function varrer(client) {
       try {
         const data = JSON.parse(pendente.nix_result_json);
         const channel = await client.channels.fetch(pendente.thread_id);
+        await excluirRecriacao(client, match(pendente.id), channel);
         const message = await channel.send(resultadoEmbed(match(pendente.id), data));
         db.prepare('UPDATE matches SET nix_result_msg_id = ? WHERE id = ?').run(message.id, pendente.id);
         await require('./partida').liberarResultado(client, pendente.id);
@@ -304,4 +323,4 @@ async function acao(interaction, id, action) {
   }
   return interaction.editReply({ content: 'O controle de expulsão foi removido.', components: [] });
 }
-module.exports = { painel, inicioEmbed, recriacaoEmbed, resultadoEmbed, corrigirTimesDoRoster, corrigirTimesDoResultado, publicar, publicarInicio, atualizar, varrer, acao };
+module.exports = { painel, inicioEmbed, recriacaoEmbed, resultadoEmbed, corrigirTimesDoRoster, corrigirTimesDoResultado, excluirRecriacao, publicar, publicarInicio, atualizar, varrer, acao };

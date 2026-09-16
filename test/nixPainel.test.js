@@ -8,6 +8,8 @@ require.cache[databasePath] = { id: databasePath, filename: databasePath, loaded
     writes.push(sql);
     if (sql.includes('nix_poll_at = ?')) m.nix_poll_at = args[0];
     if (sql.includes('nix_result_msg_id = ?')) m.nix_result_msg_id = args[0];
+    if (sql.includes('nix_recreate_msg_id = ?')) m.nix_recreate_msg_id = args[0];
+    if (sql.includes('nix_recreate_msg_id = NULL')) m.nix_recreate_msg_id = null;
     if (sql.includes('nix_poll_done = 1')) m.nix_poll_done = 1;
   } }) } };
 const api = require('../src/lib/nixSalas');
@@ -94,21 +96,23 @@ test('recriação fica em embed separado com regras gerais', () => {
 });
 test('polling final publica uma vez e encerra consultas', async () => {
   m.status='EM_ANDAMENTO'; m.em_andamento_em=Date.now();
+  m.nix_recreate_msg_id='recreate';
   const path=require.resolve('../src/features/partida');
   let released=0;
   require.cache[path]={id:path,filename:path,loaded:true,exports:{
     get:()=>m, liberarResultado:async()=>{released++;},
   }};
   const old=api.resultado;
-  let calls=0, messages=0;
+  let calls=0, messages=0, deleted=0;
   api.resultado=async()=>{calls++;return {status:'finalizada',poll_after_seconds:null,teams:[],winner_team:1};};
-  const client={user:{displayAvatarURL:()=>null},channels:{fetch:async()=>({
-    send:async()=>({id:String(++messages)}),messages:{edit:async()=>({})},
+  const client={user:{id:'bot',displayAvatarURL:()=>null},channels:{fetch:async()=>({
+    send:async()=>({id:String(++messages)}),messages:{edit:async()=>({}),fetch:async(id)=>id==='recreate'?{delete:async()=>{deleted++;}}:null},
   })}};
   try {
     await ui.atualizar(client,1); await ui.atualizar(client,1);
     assert.equal(calls,1); assert.equal(released,1); assert.equal(m.nix_poll_done,1);
     assert.ok(m.nix_result_msg_id);
+    assert.equal(deleted,1); assert.equal(m.nix_recreate_msg_id,null);
   } finally { api.resultado=old; }
 });
 
