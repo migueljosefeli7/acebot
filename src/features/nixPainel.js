@@ -165,50 +165,18 @@ async function publicar(client, id, members = null) {
   } finally { publishing.delete(key); }
 }
 
-const firstStat = (source, keys) => {
-  for (const key of keys) if (source?.[key] != null) return source[key];
-  return '—';
-};
-function roundsDoTime(data, team) {
-  const teamData = (data.teams || []).find(t => Number(t.team) === team) || {};
-  const direct = firstStat(teamData, ['rounds_won', 'round_wins', 'rounds', 'score']);
-  if (direct !== '—' && typeof direct !== 'object') return direct;
-  for (const source of [data.rounds, data.round_score, data.score, data.team_scores]) {
-    if (Array.isArray(source)) {
-      const found = source.find(item => Number(item?.team) === team);
-      if (found) return firstStat(found, ['rounds_won', 'round_wins', 'rounds', 'score', 'wins']);
-      if (source[team - 1] != null && typeof source[team - 1] !== 'object') return source[team - 1];
-    } else if (source && typeof source === 'object') {
-      const value = source[team] ?? source[`team_${team}`] ?? source[`team${team}`];
-      if (value != null) return typeof value === 'object'
-        ? firstStat(value, ['rounds_won', 'round_wins', 'rounds', 'score', 'wins']) : value;
-    }
-  }
-  return '—';
-}
-const statsLine = (p) =>
-  `\`KILL ${String(firstStat(p, ['kills', 'kill'])).padStart(3)}\`  ` +
-  `\`DEAD ${String(firstStat(p, ['deaths', 'dead', 'deads'])).padStart(3)}\`  ` +
-  `\`HS ${String(firstStat(p, ['headshots', 'hs'])).padStart(3)}\`  ` +
-  `\`DANO ${String(firstStat(p, ['damage', 'damage_dealt', 'dano'])).padStart(4)}\``;
-
 function resultadoEmbed(m, data) {
-  const round1 = roundsDoTime(data, 1);
-  const round2 = roundsDoTime(data, 2);
   const vencedor = data.winner_team == null ? 'Vencedor não identificado' : `Time ${clean(data.winner_team)} venceu`;
   const embed = new EmbedBuilder().setColor(0xff0101).setTitle('🏆 Resultado da Partida')
-    .setDescription(
-      `## ${vencedor} 🏆\n` +
-      `### Placar por rounds\n🔵 **Time 1  ${clean(round1)}  ×  ${clean(round2)}  Time 2** 🔴`
-    );
+    .setDescription(`## ${vencedor} 🏆`);
   for (const team of (data.teams || []).slice(0, 2)) {
     embed.addFields({ name: `Time ${clean(team.team)}${team.is_winner ? ' 🏆' : ''}`, value:
       (team.players || []).slice(0, 4).map(p =>
-        `${String(data.match_mvp?.account_id) === String(p.account_id) ? '⭐ ' : ''}**${clean(p.nickname)}**\n${statsLine(p)}`
+        `${String(data.match_mvp?.account_id) === String(p.account_id) ? '⭐ ' : ''}**${clean(p.nickname)}** · **${p.kills ?? 0} KILL**`
       ).join('\n\n').slice(0, 1024) || 'Sem dados' });
   }
   if (data.match_mvp) embed.addFields({ name: '⭐ MVP da partida',
-    value: `**${clean(data.match_mvp.nickname)}** · Time ${clean(data.match_mvp.team)} · **${firstStat(data.match_mvp, ['kills', 'kill'])} KILL**` });
+    value: `**${clean(data.match_mvp.nickname)}** · Time ${clean(data.match_mvp.team)} · **${data.match_mvp.kills ?? 0} KILL**` });
   embed.setFooter({ text: `Partida #${m.id} · confirme o vencedor abaixo.` });
   return { embeds: [embed], allowedMentions: { parse: [] } };
 }
@@ -252,7 +220,7 @@ async function atualizar(client, id) {
         ...p, player_uid: p.account_id, slot: '—', team: t.team,
       }))));
     }
-    if (result.poll_after_seconds === null || result.status === 'finalizada' || result.status === 'no_match') {
+    if (result.status === 'finalizada' || result.status === 'no_match') {
       rosters.delete(session);
       db.prepare('UPDATE matches SET nix_poll_done = 1 WHERE id = ?').run(id);
       if (result.status === 'no_match') {
@@ -289,10 +257,27 @@ async function varrer(client) {
   if (sweeping || !cfg.nixSalas.apiKey || Date.now() < blockedUntil) return;
   sweeping = true;
   try {
+    // Recupera o raro caso de o processo cair depois de salvar o resultado,
+    // mas antes de publicar o card no tópico.
+    const resultadosPendentes = db.prepare(`SELECT id, thread_id, nix_result_json FROM matches
+      WHERE nix_result_json IS NOT NULL AND nix_result_msg_id IS NULL
+      AND thread_id IS NOT NULL AND status != 'CANCELADA' LIMIT 10`).all();
+    for (const pendente of resultadosPendentes) {
+      try {
+        const data = JSON.parse(pendente.nix_result_json);
+        const channel = await client.channels.fetch(pendente.thread_id);
+        const message = await channel.send(resultadoEmbed(match(pendente.id), data));
+        db.prepare('UPDATE matches SET nix_result_msg_id = ? WHERE id = ?').run(message.id, pendente.id);
+        await require('./partida').liberarResultado(client, pendente.id);
+      } catch (e) {
+        console.warn(`[resultado #${pendente.id}] publicação pendente falhou:`, e.message);
+      }
+    }
+
     const rows = db.prepare(`SELECT id FROM matches WHERE nix_session_id IS NOT NULL
       AND nix_poll_done = 0 AND nix_poll_at <= ? AND status != 'CANCELADA'
       AND (status = 'SALA_CRIADA' OR em_andamento_em > ?)
-      ORDER BY nix_poll_at LIMIT 20`).all(Date.now(), Date.now() - 40 * 60000);
+      ORDER BY nix_poll_at LIMIT 20`).all(Date.now(), Date.now() - 120 * 60000);
     for (const m of rows) {
       if (Date.now() < blockedUntil) break;
       const wait = nextQueryAt - Date.now();
