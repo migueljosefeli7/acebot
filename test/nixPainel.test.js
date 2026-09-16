@@ -36,6 +36,25 @@ test('painel serializa slots, dispositivos e controles como embed clássico', ()
   assert.equal(payload.flags, undefined);
   assert.equal(payload.embeds[0].toJSON().color, 0xff0101);
 });
+test('times do roster são definidos pelos slots reais da sala', () => {
+  const fixed=ui.corrigirTimesDoRoster([
+    {...player,slot:1,team:2,player_uid:'a'},
+    {...player,slot:4,team:null,player_uid:'b'},
+    {...player,slot:5,team:1,player_uid:'c'},
+    {...player,slot:8,team:null,player_uid:'d'},
+  ]);
+  assert.deepEqual(fixed.map(p=>p.team),[1,1,2,2]);
+});
+test('resultado preserva os times identificados antes da partida', () => {
+  const result=ui.corrigirTimesDoResultado({winner_team:1,match_mvp:{account_id:'c',team:1,kills:4},teams:[
+    {team:1,players:[{account_id:'c',nickname:'C',team:1,kills:4,won:true}]},
+    {team:2,players:[{account_id:'a',nickname:'A',team:2,kills:1,won:false}]},
+  ]},[{player_uid:'a',slot:1,team:2},{player_uid:'c',slot:5,team:1}]);
+  assert.equal(result.winner_team,2);
+  assert.equal(result.teams[0].players[0].account_id,'a');
+  assert.equal(result.teams[1].players[0].account_id,'c');
+  assert.equal(result.match_mvp.team,2);
+});
 test('rotas autenticadas, uid em string e tratamento de 429', async () => {
   const old = global.fetch;
   const calls=[];

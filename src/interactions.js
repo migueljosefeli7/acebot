@@ -329,6 +329,7 @@ async function onButton(interaction) {
       // agora dispara o mesmo SOS, sem permitir que jogador chame VAR.
       case 'quebra': return partida.chamarSuporte(interaction, id);
       case 'recriar': return partida.recriarSala(interaction, id);
+      case 'recriar_confirm': return partida.confirmarRecriacao(interaction, id);
       case 'revisao': return partida.chamarSuporte(interaction, id);
       case 'ss':
       case 'ss_ok': return partida.chamarSuporte(interaction, id);

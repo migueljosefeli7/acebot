@@ -1026,7 +1026,7 @@ const cobrarRecriacao = db.transaction((matchId, userId) => {
   const m = get(matchId);
   if (!m || !ehJogador(m, userId)) return { erro: 'NAO_E_JOGADOR' };
   if (['FINALIZADA', 'CANCELADA'].includes(m.status)) return { erro: 'ENCERRADA' };
-  if (m.status !== 'EM_ANDAMENTO') return { erro: 'FORA_DE_HORA' };
+  if (!m.nix_session_id) return { erro: 'FORA_DE_HORA' };
 
   const custo = taxaRecriacao();
   try {
@@ -1042,6 +1042,7 @@ const cobrarRecriacao = db.transaction((matchId, userId) => {
        proof_p1 = NULL, proof_p2 = NULL, ss_por = NULL, ss_nicks = NULL,
        staff_id = NULL, cancel_req = NULL, nix_session_id = NULL,
        nix_panel_id = NULL, nix_result_msg_id = NULL, nix_result_json = NULL,
+       nix_roster_json = NULL,
        nix_poll_at = 0, nix_poll_done = 0, go_p1 = 0, go_p2 = 0,
        sala_pronta_em = NULL, go_msg_id = NULL, em_andamento_em = NULL,
        pronto_pra_resultado = 0,
@@ -1052,6 +1053,28 @@ const cobrarRecriacao = db.transaction((matchId, userId) => {
 });
 
 async function recriarSala(interaction, matchId) {
+  const m = get(matchId);
+  if (!m || !ehJogador(m, interaction.user.id)) {
+    return nao(interaction, 'Você não é jogador', 'Só os jogadores podem refazer a sala.');
+  }
+  if (['FINALIZADA', 'CANCELADA'].includes(m.status) || !m.nix_session_id) {
+    return nao(interaction, 'Sala indisponível', 'Não existe uma sala atual que possa ser recriada.');
+  }
+  return interaction.reply(ui.msg(ui.bloco(cfg.COR.aviso,
+    ui.titulo('⚠️ CONFIRMAR RECRIAÇÃO DA SALA'),
+    ui.divisor(),
+    ui.txt(
+      'Use esta opção **somente com o consentimento dos dois jogadores**.\n\n' +
+      `Ao confirmar, serão debitados **${money.fmt(taxaRecriacao())}** do seu saldo, a sala atual será ignorada e uma nova sala será criada.`
+    ),
+    ui.linhaBotoes(
+      ui.botao(`match:recriar_confirm:${matchId}`, 'CONFIRMAR E RECRIAR', { estilo: ui.ESTILO.Danger, emoji: '🔄' }),
+    ),
+    ui.nota('Ao confirmar, você declara que os dois jogadores concordaram.'),
+  ), { efemero: true }));
+}
+
+async function confirmarRecriacao(interaction, matchId) {
   const r = cobrarRecriacao(matchId, interaction.user.id);
 
   if (r.erro === 'NAO_E_JOGADOR') return nao(interaction, 'Você não é jogador', 'Só os jogadores podem refazer a sala.');
@@ -2462,5 +2485,5 @@ module.exports = {
   selecionarVencedor, confirmarVencedor, cancelarEscolhaVencedor, chamarSuporte, chamarVarStaff,
   modalRevanche, abrirModalRevanche, proporRevanche, aceitarRevanche, recusarRevanche,
   abrirDisputa, sincronizarNomesTopicos,
-  abrirQuebraDeRegra, registrarQuebra, recriarSala, taxaRecriacao, pedirRevisao, veredito, finalizarPartida, cancelarPartida, pedirCancelamento,
+  abrirQuebraDeRegra, registrarQuebra, recriarSala, confirmarRecriacao, taxaRecriacao, pedirRevisao, veredito, finalizarPartida, cancelarPartida, pedirCancelamento,
 };

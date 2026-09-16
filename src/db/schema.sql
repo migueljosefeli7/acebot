@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS matches (
   nix_room_id TEXT,
   nix_room_password TEXT,
   nix_invite_link TEXT,
+  nix_roster_json TEXT,
   created_at   INTEGER NOT NULL,
   finished_at  INTEGER
 );

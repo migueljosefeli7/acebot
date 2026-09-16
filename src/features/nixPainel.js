@@ -22,8 +22,21 @@ const timestamp = (value) => {
   return Number.isFinite(millis) ? `<t:${Math.floor(millis / 1000)}:F>` : clean(value);
 };
 const playerLine = (p) => `• ${p.platform === 'mobile' ? '📱' : p.platform === 'emulator' ? '🖥️' : '❔'} **#${clean(p.slot)} ${clean(p.nickname)}** \`${clean(p.player_uid ?? p.account_id)}\``;
+const teamBySlot = (slot) => {
+  const n = Number(slot);
+  if (n >= 1 && n <= 4) return 1;
+  if (n >= 5 && n <= 8) return 2;
+  return null;
+};
+function corrigirTimesDoRoster(members) {
+  return (members || []).map(p => ({ ...p, team: teamBySlot(p.slot) ?? p.team }));
+}
+function rosterSalvo(m) {
+  try { return corrigirTimesDoRoster(JSON.parse(m?.nix_roster_json || '[]')); }
+  catch { return []; }
+}
 function rosterFields(members) {
-  const players = (members || []).filter(p => !p.is_owner).slice(0, 8)
+  const players = corrigirTimesDoRoster(members).filter(p => !p.is_owner).slice(0, 8)
     .sort((a, b) => Number(a.slot) - Number(b.slot));
   return [1, 2].map(team => {
     const list = players.filter(p => Number(p.team) === team);
@@ -33,7 +46,7 @@ function rosterFields(members) {
 
 function painel(m, members, icon) {
   const waiting = m.status === 'SALA_CRIADA';
-  const players = (members || []).filter(p => !p.is_owner).slice(0, 8)
+  const players = corrigirTimesDoRoster(members).filter(p => !p.is_owner).slice(0, 8)
     .sort((a, b) => Number(a.slot) - Number(b.slot));
   const teams = rosterFields(players).map(team => `**${team.name}**\n${team.value}`);
   const unknown = players.filter(p => ![1, 2].includes(Number(p.team)));
@@ -60,6 +73,33 @@ function painel(m, members, icon) {
     components[1].addComponents(new ButtonBuilder().setLabel('Link da Sala').setStyle(ButtonStyle.Link).setURL(m.nix_invite_link));
   }
   return { embeds: [embed], components, allowedMentions: { parse: [] } };
+}
+
+function corrigirTimesDoResultado(data, members) {
+  const roster = new Map(corrigirTimesDoRoster(members)
+    .map(p => [String(p.player_uid ?? p.account_id), Number(p.team)]));
+  const players = (data.teams || []).flatMap(t => (t.players || []).map(p => ({
+    ...p,
+    team: roster.get(String(p.account_id)) || Number(p.team),
+  })));
+  const vencedorMapeado = players.find(p => p.won === true)?.team;
+  const winnerTeam = vencedorMapeado || Number(data.winner_team) || null;
+  const teams = [1, 2].map(team => {
+    const list = players.filter(p => Number(p.team) === team);
+    const mvp = list.reduce((best, p) => best == null || Number(p.kills || 0) > Number(best.kills || 0) ? p : best, null);
+    return {
+      ...(data.teams || []).find(t => Number(t.team) === team),
+      team,
+      is_winner: winnerTeam === team,
+      team_mvp_account_id: mvp?.account_id ?? null,
+      players: list,
+    };
+  });
+  const matchMvp = data.match_mvp && {
+    ...data.match_mvp,
+    team: roster.get(String(data.match_mvp.account_id)) || data.match_mvp.team,
+  };
+  return { ...data, winner_team: winnerTeam, match_mvp: matchMvp, teams };
 }
 
 function inicioEmbed(m, members, icon, automatico = true) {
@@ -94,7 +134,7 @@ async function publicarInicio(client, id, automatico = true) {
   const m = match(id);
   if (!m?.thread_id) return null;
   const channel = await client.channels.fetch(m.thread_id);
-  const inicio = await channel.send(inicioEmbed(m, rosters.get(m.nix_session_id) || [], client.user.displayAvatarURL(), automatico));
+  const inicio = await channel.send(inicioEmbed(m, rosters.get(m.nix_session_id) || rosterSalvo(m), client.user.displayAvatarURL(), automatico));
   await channel.send(recriacaoEmbed(m));
   return inicio;
 }
@@ -187,7 +227,9 @@ async function atualizar(client, id) {
     if (m.status === 'SALA_CRIADA') {
       const data = await api.membros(session);
       if (!stillCurrent()) return false;
-      rosters.set(session, data.members || []);
+      data.members = corrigirTimesDoRoster(data.members || []);
+      rosters.set(session, data.members);
+      db.prepare('UPDATE matches SET nix_roster_json = ? WHERE id = ?').run(JSON.stringify(data.members), id);
       if (data.status === 'started') {
         await require('./partida').iniciarPartidaAutomatico(client, id, true);
       }
@@ -195,9 +237,10 @@ async function atualizar(client, id) {
       return true;
     }
     if (!m.em_andamento_em) return false;
-    const result = await api.resultado(session);
+    let result = await api.resultado(session);
     if (!stillCurrent()) return false;
     if (result.status === 'finalizada') {
+      result = corrigirTimesDoResultado(result, rosters.get(session) || rosterSalvo(m));
       db.prepare('UPDATE matches SET nix_result_json = ? WHERE id = ?').run(JSON.stringify(result), id);
       if (!m.nix_result_msg_id) {
         const channel = await client.channels.fetch(m.thread_id);
@@ -275,4 +318,4 @@ async function acao(interaction, id, action) {
   }
   return interaction.editReply({ content: 'O controle de expulsão foi removido.', components: [] });
 }
-module.exports = { painel, inicioEmbed, recriacaoEmbed, resultadoEmbed, publicar, publicarInicio, atualizar, varrer, acao };
+module.exports = { painel, inicioEmbed, recriacaoEmbed, resultadoEmbed, corrigirTimesDoRoster, corrigirTimesDoResultado, publicar, publicarInicio, atualizar, varrer, acao };
